@@ -1,8 +1,8 @@
 // Interiores de cabina detallados: estructura, mandos animados, piloto
 // (piernas y guantes), paneles con instrumentos dibujados en canvas y HUD.
 import * as THREE from 'three';
-import * as I from './instruments.js?v=7';
-import { mat, glassMat } from './models.js?v=7';
+import * as I from './instruments.js?v=9';
+import { mat, glassMat } from './models.js?v=9';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -287,32 +287,32 @@ const STYLES = {
     c.box(0.95, 0.04, 1.8, 0, -1.0, -0.2, M.dark);
     c.box(0.08, 0.08, 1.8, -0.45, -0.32, -0.1, M.frame); c.box(0.08, 0.08, 1.8, 0.45, -0.32, -0.1, M.frame);
     // marcos de los cristales planos
-    c.bar(V(-0.44, -0.3, -0.78), V(-0.34, 0.28, -0.55), 0.03, M.frame);
-    c.bar(V(0.44, -0.3, -0.78), V(0.34, 0.28, -0.55), 0.03, M.frame);
-    c.bar(V(-0.34, 0.28, -0.55), V(0.34, 0.28, -0.55), 0.03, M.frame);
-    c.bar(V(-0.34, 0.28, -0.55), V(-0.34, 0.3, 0.6), 0.03, M.frame);
-    c.bar(V(0.34, 0.28, -0.55), V(0.34, 0.3, 0.6), 0.03, M.frame);
-    c.bar(V(-0.45, -0.3, 0.1), V(-0.34, 0.29, 0.1), 0.03, M.frame);
-    c.bar(V(0.45, -0.3, 0.1), V(0.34, 0.29, 0.1), 0.03, M.frame);
+    c.bar(V(-0.44, -0.3, -0.78), V(-0.34, 0.28, -0.55), 0.018, M.frame);
+    c.bar(V(0.44, -0.3, -0.78), V(0.34, 0.28, -0.55), 0.018, M.frame);
+    c.bar(V(-0.34, 0.28, -0.55), V(0.34, 0.28, -0.55), 0.018, M.frame);
+    c.bar(V(-0.34, 0.28, -0.55), V(-0.34, 0.3, 0.6), 0.018, M.frame);
+    c.bar(V(0.34, 0.28, -0.55), V(0.34, 0.3, 0.6), 0.018, M.frame);
+    c.bar(V(-0.45, -0.3, 0.1), V(-0.34, 0.29, 0.1), 0.018, M.frame);
+    c.bar(V(0.45, -0.3, 0.1), V(0.34, 0.29, 0.1), 0.018, M.frame);
     c.box(0.7, 0.04, 1.15, 0, 0.31, 0.05, og);
-    c.bar(V(-0.45, -0.3, 0.6), V(-0.34, 0.3, 0.6), 0.03, M.frame);
-    c.bar(V(0.45, -0.3, 0.6), V(0.34, 0.3, 0.6), 0.03, M.frame);
+    c.bar(V(-0.45, -0.3, 0.6), V(-0.34, 0.3, 0.6), 0.018, M.frame);
+    c.bar(V(0.45, -0.3, 0.6), V(0.34, 0.3, 0.6), 0.018, M.frame);
     // panel
     c.box(0.74, 0.38, 0.05, 0, -0.5, -0.66, og, -0.25);
     c.addPanel({ w: 0.7, h: 0.35, cw: 1024, ch: 512, x: 0, y: -0.5, z: -0.63, rx: -0.25, draw: PANELS.heliGlass });
     c.box(0.76, 0.06, 0.2, 0, -0.3, -0.72, M.dark);
-    c.addHUD(0, -0.12, -0.66, 0.24);
+    c.addHUD(0, -0.2, -0.64, 0.2);
     // artillero delantero y su cabina
-    c.box(0.9, 0.5, 0.05, 0, -0.75, -0.85, og);
+    c.box(0.9, 0.32, 0.05, 0, -0.84, -0.85, og);
     const gunner = new THREE.Group();
     gunner.add(new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), mat(0x2f3a2a)));
     const vis = new THREE.Mesh(new THREE.SphereGeometry(0.152, 10, 6, -Math.PI * 0.35, Math.PI * 0.7, Math.PI * 0.35, Math.PI * 0.3), M.black); vis.rotation.y = Math.PI; gunner.add(vis);
     const tor = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.4, 0.28), mat(0x4a5638)); tor.position.y = -0.36; gunner.add(tor);
-    gunner.position.set(0, -0.42, -1.35); c.group.add(gunner);
-    c.box(0.46, 0.5, 0.08, 0, -0.62, -1.15, M.seat);
-    c.bar(V(-0.42, -0.6, -1.0), V(-0.3, -0.05, -1.65), 0.03, M.frame);
-    c.bar(V(0.42, -0.6, -1.0), V(0.3, -0.05, -1.65), 0.03, M.frame);
-    c.bar(V(-0.3, -0.05, -1.65), V(0.3, -0.05, -1.65), 0.03, M.frame);
+    gunner.position.set(0, -0.56, -1.4); c.group.add(gunner);
+    c.box(0.46, 0.3, 0.08, 0, -0.74, -1.15, M.seat);
+    c.bar(V(-0.42, -0.6, -1.0), V(-0.3, -0.05, -1.65), 0.018, M.frame);
+    c.bar(V(0.42, -0.6, -1.0), V(0.3, -0.05, -1.65), 0.018, M.frame);
+    c.bar(V(-0.3, -0.05, -1.65), V(0.3, -0.05, -1.65), 0.018, M.frame);
     c.canopyGlass(0.45, 0.55, 1.2, -0.3, -0.1);
     c.seat(0, -0.82, 0.12, 0.5, 0.8, M.seat, false);
     c.legs(0, -0.82, 0.08, -1.0, -0.65, 0.12);

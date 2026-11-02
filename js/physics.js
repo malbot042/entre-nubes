@@ -1,6 +1,6 @@
 // Modelo de vuelo simplificado pero creíble para aviones y helicópteros.
 import * as THREE from 'three';
-import { clamp, lerp, smoothstep, DEG } from './util.js?v=7';
+import { clamp, lerp, smoothstep, DEG } from './util.js?v=9';
 
 const G = 9.81;
 const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _q = new THREE.Quaternion(), _qi = new THREE.Quaternion();
@@ -167,6 +167,10 @@ export class FlightModel {
       }
       const resp = 1 - Math.exp(-dt / s.resp);
       this.omega.lerp(tgt, resp);
+    } else if (input.assist) {
+      // ---------- helicóptero arcade (pilotaje asistido) ----------
+      this.arcadeHeli(dt, input, env, world, yaw);
+      return;
     } else {
       // ---------- helicóptero ----------
       const gh0 = Math.max(world.groundHeight(this.pos.x, this.pos.z), 0);
@@ -226,6 +230,55 @@ export class FlightModel {
       _q.setFromAxisAngle(_v.copy(this.omega).divideScalar(w), w * dt);
       this.quat.multiply(_q).normalize();
     }
+    this.pos.addScaledVector(this.vel, dt);
+    this.groundContact(dt, input, world);
+  }
+
+  // Helicóptero arcade: W/S aceleran y frenan en el sentido del rumbo, A/D giran el rumbo
+  // y el colectivo fija la velocidad vertical. La actitud es solo visual y moderada,
+  // para que avanzar no hunda el morro ni tape la visión desde la cabina.
+  arcadeHeli(dt, input, env, world, yaw) {
+    const s = this.spec;
+    this.aoa = 0; this.stall = false;
+    const ax = this.vel.x - env.wind.x, az = this.vel.z - env.wind.z;
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+    let vf = ax * fx + az * fz, vr = ax * rx + az * rz;
+    const airborne = !this.onGround || this.throttle > 0.52;
+    const push = airborne ? -input.pitch : 0; // W = +1
+    const A = 11, vmax = s.vmax;
+    // empuje y resistencia: velocidad terminal = vmax con W pulsada
+    let acc = push * (push > 0 ? A : A * 1.3) - A * (vf / vmax) * Math.abs(vf / vmax);
+    if (push === 0) acc -= vf * 0.35; // sin mando, el helicóptero se va parando suavemente
+    vf += acc * dt;
+    if (vf < -18) vf = -18;
+    // agarre lateral: la trayectoria sigue al morro al girar
+    vr *= Math.exp(-dt * 3.5);
+    // colectivo: 50 % = estacionario; 100 % sube a 11 m/s, 0 % baja a 6 m/s
+    const c = this.throttle - 0.5;
+    const vyT = c >= 0 ? c * 2 * 11 : c * 2 * 6;
+    let vy = this.vel.y - env.wind.y;
+    vy += (vyT - vy) * Math.min(1, dt * 2.5);
+    // rumbo: A/D y pedales; más rápido en estacionario
+    const spd = smoothstep(5, 40, Math.abs(vf));
+    const yawT = -(input.roll * (0.75 - 0.3 * spd) + input.yaw * 0.8) * s.yaw * DEG;
+    this.yawRate = (this.yawRate || 0) + (yawT - (this.yawRate || 0)) * Math.min(1, dt * 7);
+    if (this.onGround && !airborne) this.yawRate *= 0.2;
+    const newYaw = yaw + this.yawRate * dt;
+    // actitud visual: morro abajo al acelerar (máx. 10°), arriba al frenar; alabeo según el giro
+    const pitchT = clamp(-push * 8 * DEG - (vf / vmax) * 3 * DEG + (push < 0 && vf > 2 ? 14 * DEG : 0), -12 * DEG, 12 * DEG);
+    const rollT = clamp(this.yawRate * Math.max(vf, 0) / G * 0.8, -24 * DEG, 24 * DEG) - (input.roll * (1 - spd)) * 6 * DEG;
+    this.visPitch = lerp(this.visPitch || 0, this.onGround && !airborne ? 0 : pitchT, Math.min(1, dt * 4));
+    this.visRoll = lerp(this.visRoll || 0, this.onGround && !airborne ? 0 : rollT, Math.min(1, dt * 4));
+    _e.set(this.visPitch, newYaw, this.visRoll, 'YXZ');
+    this.quat.setFromEuler(_e);
+    const nfx = -Math.sin(newYaw), nfz = -Math.cos(newYaw), nrx = Math.cos(newYaw), nrz = -Math.sin(newYaw);
+    this.vel.set(nfx * vf + nrx * vr + env.wind.x, vy + env.wind.y, nfz * vf + nrz * vr + env.wind.z);
+    this.omega.set(0, this.yawRate, 0);
+    this.liftRatio = airborne ? 1 : clamp(this.throttle * 2, 0, 1);
+    this.g = 1 + (vyT - vy) * 0.05 + Math.abs(this.yawRate * vf) / G * 0.5;
+    this.beta = 0;
+    const V = Math.hypot(vf, vy);
+    this.ias = V * Math.sqrt(Math.exp(-Math.max(0, this.pos.y) / 9000));
     this.pos.addScaledVector(this.vel, dt);
     this.groundContact(dt, input, world);
   }

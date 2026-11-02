@@ -1,8 +1,8 @@
 // Modelos low-poly procedurales de todas las aeronaves.
 // Convención: morro hacia -Z, arriba +Y, derecha +X. Origen ≈ centro de gravedad.
 import * as THREE from 'three';
-import { AIRCRAFT_BY_ID } from './aircraft.js?v=7';
-import { applyLivery, LIVERIES, DECALS, addDecal } from './livery.js?v=7';
+import { AIRCRAFT_BY_ID } from './aircraft.js?v=9';
+import { applyLivery, LIVERIES, DECALS, addDecal } from './livery.js?v=9';
 
 const DEG = Math.PI / 180;
 const matCache = new Map();
@@ -167,6 +167,7 @@ function rotor(blades, R, chord, color = 0x222222) {
   g.add(mesh(new THREE.CylinderGeometry(0.25, 0.3, 0.35, 8), mat(0x444444, { m: 0.6 })));
   for (let i = 0; i < blades; i++) {
     const b = mesh(new THREE.BoxGeometry(R, 0.05, chord).translate(R / 2 + 0.2, 0, 0), bm);
+    b.userData.blade = true;
     b.rotation.y = (i / blades) * Math.PI * 2;
     b.rotation.x = 0.04;
     g.add(b);

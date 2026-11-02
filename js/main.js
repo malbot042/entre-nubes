@@ -1,19 +1,19 @@
 // Entre Nubes — bucle principal, cámaras, entrada, HUD y menús.
 import * as THREE from 'three';
-import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=7';
-import { buildModel } from './models.js?v=7';
-import { Cockpit } from './cockpit.js?v=7';
-import { FlightModel } from './physics.js?v=7';
-import { World, CHUNK } from './world.js?v=7';
-import { Environment, WEATHER } from './environment.js?v=7';
-import { AudioEngine } from './audio.js?v=7';
-import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=7';
-import { PostFX } from './postfx.js?v=7';
-import { Particles } from './effects.js?v=7';
-import { Combat } from './combat.js?v=7';
-import { MODES, createMission, isCombat } from './missions.js?v=7';
-import { TacticalHUD } from './hud.js?v=7';
-import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=7';
+import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=9';
+import { buildModel } from './models.js?v=9';
+import { Cockpit } from './cockpit.js?v=9';
+import { FlightModel } from './physics.js?v=9';
+import { World, CHUNK } from './world.js?v=9';
+import { Environment, WEATHER } from './environment.js?v=9';
+import { AudioEngine } from './audio.js?v=9';
+import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=9';
+import { PostFX } from './postfx.js?v=9';
+import { Particles } from './effects.js?v=9';
+import { Combat } from './combat.js?v=9';
+import { MODES, createMission, isCombat } from './missions.js?v=9';
+import { TacticalHUD } from './hud.js?v=9';
+import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=9';
 
 // ---------------- Ajustes persistentes ----------------
 const DEFAULTS = { aircraft: 'f16', time: '13', weather: 'clear', dist: 'medium', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, hud: true, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, assist: true, edges: true, best: {} };
@@ -100,7 +100,7 @@ const state = {
 const eyePivot = new THREE.Group();
 window.__entreNubes = { state, scene, camera, env, combat, particles, fx };
 const keys = new Set();
-const defPitch = () => (state.spec?.type === 'heli' ? -14 : state.spec?.cat === 'fighter' ? -6 : -10) * DEG;
+const defPitch = () => (state.spec?.type === 'heli' ? -8 : -6) * DEG;
 
 // ---------------- Utilidades UI ----------------
 const $ = (id) => document.getElementById(id);
@@ -604,8 +604,10 @@ function readInput(dt) {
   if (settings.invert) tp = -tp;
   const tr = k('KeyD', 'ArrowRight') - k('KeyA', 'ArrowLeft');
   const ty = k('KeyE') - k('KeyQ');
+  // el helicóptero responde casi al instante; el avión conserva algo de rampa
+  const heli = spec.type === 'heli';
   const ease = (cur, t) => {
-    const rate = t === 0 ? 5 : (Math.sign(t) !== Math.sign(cur) && cur !== 0 ? 7 : 2.8);
+    const rate = t === 0 ? (heli ? 9 : 5) : (Math.sign(t) !== Math.sign(cur) && cur !== 0 ? (heli ? 12 : 7) : (heli ? 8 : 2.8));
     return cur + clamp(t - cur, -rate * dt, rate * dt);
   };
   inp.pitch = ease(inp.pitch, tp); inp.roll = ease(inp.roll, tr); inp.yaw = ease(inp.yaw, ty);
@@ -861,6 +863,9 @@ function animateModel(dt) {
   for (const r of p.rotors) r.rotation.y += (rpm * 20) * dt;
   for (const r of p.tailRotors) r.rotation.y += rpm * 60 * dt;
   for (const d of p.discs) d.material.opacity = rpm > 0.3 ? 0.12 + rpm * 0.08 : 0;
+  // en cabina, con el rotor a régimen, las palas se ven como disco difuminado y no tapan la vista
+  const blur = state.cam === 'cockpit' && rpm > 0.5;
+  for (const r of p.rotors) r.traverse(o => { if (o.userData.blade) o.visible = !blur; });
   for (const ge of p.gear) ge.obj.rotation[ge.axis] = ge.up * (1 - fm.gear);
   const ab = fm.ab ? (fm.rpm - 0.85) / 0.15 : 0;
   for (let i = 0; i < p.ab.length; i++) {
