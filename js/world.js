@@ -10,7 +10,7 @@ const CITY_CELL = 6000;
 const VILLAGE_CELL = 1700;
 const FARM_CELL = 4500;
 const BLOCK = 100;
-const PHYS_RES = 64;
+const PHYS_RES = 24;
 
 export const sharedUniforms = { uNight: { value: 0 }, uTime: { value: 0 } };
 
@@ -21,7 +21,7 @@ float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
 `;
 
 function makeTerrainMaterial() {
-  const m = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uNight = sharedUniforms.uNight;
     sh.vertexShader = sh.vertexShader
@@ -264,7 +264,7 @@ export class World {
   // ---------- Funciones de altura ----------
   baseHeight(x, z) {
     const c = this.nBase.fbm(x / 11000, z / 11000, 3);
-    let h = 28 + c * 95;
+    let h = 55 + c * 80;
     const mMask = smoothstep(0.08, 0.55, c + 0.35 * this.nDet.noise(x / 23000 + 11, z / 23000 - 7));
     if (mMask > 0) {
       const r = this.nRidge.ridged(x / 4200, z / 4200, 4);
@@ -273,7 +273,7 @@ export class World {
     h += this.nDet.fbm(x / 1100, z / 1100, 3) * 32 * (0.4 + mMask);
     h += this.nDet.noise(x / 170, z / 170) * 2.5;
     const l = this.nLake.fbm(x / 3000, z / 3000, 2);
-    if (l > 0.3) h -= (l - 0.3) * 430 * (1 - mMask);
+    if (l > 0.5) h -= (l - 0.5) * 700 * (1 - mMask);
     return h;
   }
 
@@ -730,7 +730,7 @@ export class World {
       const dens = smoothstep(0.05, 0.25, fN);
       const iso = 0.012;
       if (rnd() > dens * 0.95 + iso) continue;
-      const h = this.height(wx, wz);
+      const h = this.groundHeight(wx, wz);
       if (h < 2 || h > 1150) continue;
       if (!free(wx, wz)) continue;
       const ci = this.cityAt(wx, wz);
@@ -809,14 +809,14 @@ export class World {
       const vr = mulberry32(vx * 9176 + vz * 131 + this.seed);
       const n = 10 + Math.floor(vr() * 28);
       const inChunk = (x, z) => x >= ox && x < ox + CHUNK && z >= oz && z < oz + CHUNK;
-      if (inChunk(cxv, czv)) churches.push(cxv - ox, ch - 0.5, czv - oz, vr() * 6.28);
+      if (inChunk(cxv, czv)) churches.push(cxv - ox, this.groundHeight(cxv, czv) - 0.5, czv - oz, vr() * 6.28);
       for (let k = 0; k < n; k++) {
         const a = vr() * Math.PI * 2, d = 25 + Math.sqrt(vr()) * 190;
         const x = cxv + Math.cos(a) * d, z = czv + Math.sin(a) * d;
         const w = 8 + vr() * 5, dd = 8 + vr() * 6, ht = 3 + vr() * 3.5, col = FACADES[Math.floor(vr() * FACADES.length)];
         const rc = ROOFS[Math.floor(vr() * 3)], rr = vr() < 0.5 ? 0 : Math.PI / 2;
         if (!inChunk(x, z)) continue;
-        const h = this.height(x, z);
+        const h = this.groundHeight(x, z);
         if (h < 1) continue;
         boxes.push(x - ox, h - 1, z - oz, w, ht + 1, dd, col);
         roofs.push(x - ox, h + ht, z - oz, w + 1, 2.4, dd + 1, rc, rr);
@@ -829,7 +829,7 @@ export class World {
       const x = ox + rnd() * CHUNK, z = oz + rnd() * CHUNK;
       const fi = this.nBiome.noise(x / 3500 + 50, z / 3500);
       if (fi < 0.1 || rnd() < 0.3) continue;
-      const h = this.height(x, z);
+      const h = this.groundHeight(x, z);
       if (h < 2 || h > 400 || !free(x, z) || this.cityAt(x, z)) continue;
       farms.push(x - ox, h - 0.5, z - oz, rnd() * 6.28);
       lamps.push(x - ox + 6, h + 5, z - oz);
@@ -847,7 +847,7 @@ export class World {
       for (let k = 0; k < n; k++) {
         const x = bx + Math.cos(ang) * (k - n / 2) * 260, z = bz + Math.sin(ang) * (k - n / 2) * 260;
         if (x < ox || x >= ox + CHUNK || z < oz || z >= oz + CHUNK) continue;
-        const h = this.height(x, z);
+        const h = this.groundHeight(x, z);
         if (h < 30 || this.cityAt(x, z) || !free(x, z)) continue;
         turbines.push(x - ox, h - 1, z - oz, ang + Math.PI / 2 + 0.3);
         reds.push(x - ox, h + 84, z - oz);
@@ -936,7 +936,7 @@ export class World {
     for (const r of c.rotors) this.rotors.delete(r);
   }
 
-  lodFor(d) { return d <= 1.5 ? 64 : d <= 3.2 ? 32 : d <= 6 ? 16 : 8; }
+  lodFor(d) { return d <= 1.6 ? 24 : d <= 3.5 ? 12 : d <= 6.5 ? 6 : 4; }
 
   update(camPos, dt, budgetMs = 7, force = false) {
     const t0 = performance.now();

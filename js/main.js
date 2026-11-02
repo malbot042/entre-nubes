@@ -12,8 +12,8 @@ import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js';
 // ---------------- Ajustes persistentes ----------------
 const DEFAULTS = { aircraft: 'c172', time: '13', weather: 'clear', dist: 'medium', start: 'runway', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, hud: true, hudCockpit: false, fuel: true, mouse: 1, fov: 72 };
 let settings = { ...DEFAULTS };
-try { Object.assign(settings, JSON.parse(localStorage.getItem('entrenubes') || '{}')); } catch (_) { }
-const save = () => { try { localStorage.setItem('entrenubes', JSON.stringify(settings)); } catch (_) { } };
+try { Object.assign(settings, JSON.parse(localStorage.getItem('entrenubes2') || '{}')); } catch (_) { }
+const save = () => { try { localStorage.setItem('entrenubes2', JSON.stringify(settings)); } catch (_) { } };
 
 // ---------------- Render ----------------
 const canvas = document.getElementById('game');
@@ -125,12 +125,12 @@ function buildMenu() {
   $('aircraft-desc').textContent = sp ? sp.desc : '';
   const ws = $('opt-weather');
   if (!ws.options.length) for (const [k, w] of Object.entries(WEATHER)) ws.add(new Option(w.name, k));
-  ws.value = settings.weather; $('opt-time').value = settings.time; $('opt-dist').value = settings.dist; $('opt-start').value = settings.start;
+  ws.value = settings.weather; $('opt-time').value = settings.time; $('opt-dist').value = settings.dist;
 }
-for (const id of ['opt-weather', 'opt-time', 'opt-dist', 'opt-start']) {
+for (const id of ['opt-weather', 'opt-time', 'opt-dist']) {
   $(id).addEventListener('change', () => {
     settings.weather = $('opt-weather').value; settings.time = $('opt-time').value;
-    settings.dist = $('opt-dist').value; settings.start = $('opt-start').value; save();
+    settings.dist = $('opt-dist').value; save();
   });
 }
 function showPreview() {
@@ -202,7 +202,7 @@ async function startFlight(keepWorld = false) {
   env.setTime(parseFloat(settings.time));
   env.setWeather(settings.weather, true);
   refreshWeatherButtons(); updateTimeLabel();
-  spawnAircraft(settings.aircraft, settings.start);
+  spawnAircraft(settings.aircraft, 'runway');
   setLoading(true, 'Cargando escenario…');
   await new Promise(r => setTimeout(r, 20));
   state.world.update(state.fm.pos, 0, 0, true);
@@ -210,7 +210,7 @@ async function startFlight(keepWorld = false) {
   state.mode = 'flying';
   $('hud').classList.remove('hidden');
   toast(`${state.origin.icao} ${state.origin.name}  →  ${state.dest.icao} ${state.dest.name}`, '', 5000);
-  toast(state.spec.type === 'heli' ? 'Sube el colectivo con R para despegar' : 'Gases con R, suelta frenos con P', '', 5000);
+  toast(state.spec.type === 'heli' ? 'Colectivo con R/F: al 50 % se mantiene en el aire' : 'Gases con R, suelta frenos con P', '', 5000);
 }
 
 function makeDestination(fromX, fromZ, bearing, rnd) {
@@ -306,10 +306,6 @@ function spawnAircraft(id, start) {
     fm.gear = fm.gearDown ? 1 : 0;
     fm.brakes = false;
     fm.onGround = false;
-  } else if (spec.type === 'heli') {
-    const hp = ap.helipad;
-    fm.pos.set(hp.x, ap.elev + spec.gearH + 0.32, hp.z);
-    fm.quat.setFromEuler(new THREE.Euler(0, -ap.hdg, 0, 'YXZ'));
   } else {
     const p = w.localToWorld(ap, 0, -ap.len / 2 + 70);
     fm.pos.set(p.x, ap.elev + spec.gearH + 0.3, p.z);
@@ -364,7 +360,7 @@ function placeFlyby() {
 }
 
 function restart() {
-  spawnAircraft(state.spec.id, settings.start);
+  spawnAircraft(state.spec.id, 'runway');
   toast('Vuelo reiniciado');
 }
 
@@ -476,7 +472,7 @@ function readInput(dt) {
   inp.brake = !!k('KeyB'); inp.speedbrake = inp.brake;
   const thrUp = k('KeyR', 'PageUp', 'ShiftLeft', 'ShiftRight', 'Equal', 'NumpadAdd');
   const thrDn = k('KeyF', 'PageDown', 'Minus', 'NumpadSubtract');
-  const tRate = spec.type === 'heli' ? 0.35 : 0.5;
+  const tRate = spec.type === 'heli' ? 0.7 : 0.5;
   fm.throttle = clamp(fm.throttle + (thrUp - thrDn) * tRate * dt, 0, 1);
   // mando
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -811,6 +807,12 @@ function loop() {
     }
     fm.events.length = 0;
     checkArrival();
+    // ayuda: baja el tren automáticamente en aproximación
+    const sp = state.spec;
+    if (!fm.gearDown && !fm.crashed && !fm.onGround && sp.type === 'plane' && !sp.gearFixed && fm.vel.y < -0.5 && fm.ias < sp.vs * 1.7) {
+      const agl = fm.pos.y - sp.gearH - Math.max(0, state.world.groundHeight(fm.pos.x, fm.pos.z));
+      if (agl < 90) { fm.gearDown = true; audio.gearMotor(); toast('Tren bajado automáticamente'); }
+    }
     if (fm.crashed) {
       const e = fm.euler;
       fm.quat.setFromEuler(new THREE.Euler(lerp(e.x, -0.1, dt), e.y, lerp(e.z, 0.5, dt), 'YXZ'));

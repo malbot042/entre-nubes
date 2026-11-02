@@ -46,7 +46,7 @@ export class FlightModel {
       const m = spec.mass;
       this.cz = (m * G * Math.tan(spec.maxPitch * DEG)) / (spec.vmax * spec.vmax);
       this.cx = this.cz * 3;
-      this.cy = (m * G) / 100;
+      this.cy = (0.85 * m * G) / 49;
     }
   }
 
@@ -158,7 +158,9 @@ export class FlightModel {
       const ge = 1 + 0.22 * clamp(1 - hag / (s.rotorR * 1.4), 0, 1);
       const hspd = Math.hypot(vb.x, vb.z);
       const etl = 1 + 0.12 * smoothstep(7, 20, hspd);
-      const L = this.throttle * s.lift * s.mass * G * ge * etl * (rho / 1.225) * this.rpm * this.rpm;
+      // control arcade: 50 % de colectivo = vuelo estacionario; la inclinación se compensa sola
+      const tilt = Math.max(0.55, Math.cos(pitch) * Math.cos(roll));
+      const L = s.mass * G * (1 + (this.throttle - 0.5) * 1.7) / tilt * (1 + (ge - 1) * 0.3 + (etl - 1) * 0.2) * this.rpm * this.rpm;
       F.y += L;
       F.x -= this.cx * vb.x * Math.abs(vb.x);
       F.y -= this.cy * vb.y * Math.abs(vb.y);
@@ -169,18 +171,18 @@ export class FlightModel {
       this.stall = false;
       const tp = input.pitch * s.maxPitch * DEG;
       const tr = -input.roll * s.maxBank * DEG;
-      tgt.x = clamp((tp - pitch) * 2.2, -1.2, 1.2);
-      tgt.z = clamp((tr - roll) * 2.6, -1.5, 1.5);
+      tgt.x = clamp((tp - pitch) * 5, -2.2, 2.2);
+      tgt.z = clamp((tr - roll) * 5.5, -2.8, 2.8);
       const fwd = -vb.z;
-      tgt.y = -input.yaw * s.yaw * DEG - this.beta * 1.2 * smoothstep(12, 30, fwd);
+      tgt.y = -input.yaw * s.yaw * 1.5 * DEG - this.beta * 1.5 * smoothstep(10, 25, fwd);
       // viraje coordinado automático
-      if (fwd > 10) tgt.y += Math.tan(roll) * G / Math.max(fwd, 10) * 0.8 * Math.cos(roll);
-      if (this.onGround) { tgt.x = clamp(tgt.x, -0.3, 0.3); tgt.z = clamp(tgt.z, -0.3, 0.3); if (this.throttle < 0.3) tgt.y *= 0.2; }
+      if (fwd > 8) tgt.y += Math.tan(roll) * G / Math.max(fwd, 8) * Math.cos(roll);
+      if (this.onGround) { tgt.x = clamp(tgt.x, -0.3, 0.3); tgt.z = clamp(tgt.z, -0.3, 0.3); if (this.throttle < 0.45) tgt.y *= 0.3; }
       if (env.w.turb > 0) {
         const t = performance.now() / 1000;
         tgt.x += Math.sin(t * 2.7) * env.w.turb * 0.05; tgt.z += Math.sin(t * 3.3 + 2) * env.w.turb * 0.07;
       }
-      this.omega.lerp(tgt, 1 - Math.exp(-dt / 0.22));
+      this.omega.lerp(tgt, 1 - Math.exp(-dt / 0.1));
     }
 
     // fuerzas -> mundo
@@ -222,11 +224,11 @@ export class FlightModel {
     if (!down) {
       if (gs > 8 || impact > 2) return crash('Aterrizaje de panza: el tren no estaba bajado.');
     }
-    const maxVs = this.isHeli ? 4.5 : s.cat === 'fighter' || s.id === 'b737' ? 5.5 : 4.5;
+    const maxVs = this.isHeli ? 7 : s.cat === 'fighter' || s.id === 'b737' ? 9 : 8;
     if (impact > maxVs) return crash(`Impacto demasiado fuerte (${(impact * 196.85).toFixed(0)} ft/min).`);
-    if (Math.abs(roll) > (this.isHeli ? 30 : 22) * DEG) return crash('Ala contra el suelo: alabeo excesivo al contactar.');
-    if (pitch < -12 * DEG) return crash('El morro ha golpeado el terreno.');
-    if (this.isHeli && Math.abs(pitch) > 25 * DEG) return crash('El rotor ha golpeado el suelo.');
+    if (Math.abs(roll) > (this.isHeli ? 40 : 35) * DEG) return crash('Ala contra el suelo: alabeo excesivo al contactar.');
+    if (pitch < -20 * DEG) return crash('El morro ha golpeado el terreno.');
+    if (this.isHeli && Math.abs(pitch) > 35 * DEG) return crash('El rotor ha golpeado el suelo.');
     if (wasAir && impact > 0.3) this.events.push({ type: 'touchdown', impact, gs });
 
     this.onGround = true;
