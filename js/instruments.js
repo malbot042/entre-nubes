@@ -422,9 +422,9 @@ export function warnPanel(g, x, y, w, h, s) {
 // HUD de caza (verde, fondo transparente)
 export function fighterHUD(g, W, H, s) {
   g.clearRect(0, 0, W, H);
-  const col = 'rgba(80,255,120,0.95)';
-  g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 2;
-  g.font = 'bold 20px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  const col = 'rgba(80,255,120,1)';
+  g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 3;
+  g.font = 'bold 22px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
   const cx = W / 2, cy = H * 0.5, ppd = H / 30;
   // escalera de cabeceo
   g.save(); g.beginPath(); g.rect(W * 0.12, H * 0.12, W * 0.76, H * 0.76); g.clip();
@@ -470,7 +470,12 @@ export function fighterHUD(g, W, H, s) {
     g.fillRect(xx - 4, H * 0.06 + 34, 8, 8);
     g.fillText(`${s.destDist.toFixed(1)} KM`, W * 0.95 - 50, H * 0.88);
   }
-  g.fillText(`THR ${Math.round(s.throttle * 100)}${s.ab ? ' AB' : ''}`, W * 0.05 + 45, H * 0.88);
+  g.fillText(`${s.heli ? 'COL' : 'THR'} ${Math.round(s.throttle * 100)}${s.ab ? ' AB' : ''}`, W * 0.05 + 45, H * 0.88);
+  if (s.armed) {
+    g.fillText(`GUN ${s.ammo}`, cx - W * 0.16, H * 0.94);
+    g.fillText(`RKT ${s.rockets}`, cx + W * 0.16, H * 0.94);
+    g.fillRect(cx - W * 0.1, H * 0.975, W * 0.2 * s.hp, 4);
+  }
   if (s.gearDown) g.fillText('GEAR', cx, H * 0.82);
   if (s.stall) { g.font = 'bold 26px monospace'; g.fillText('STALL', cx, H * 0.7); }
 }

@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
   <title>Entre Nubes — Simulador de vuelo arcade low-poly</title>
-  <meta name="description" content="Simulador y arcade de vuelo 3D en el navegador: estética low-poly retro con render WebGL moderno, combate aéreo, ataque a tierra y circuitos de anillos.">
+  <meta name="description" content="Simulador y arcade de vuelo 3D en el navegador: F-14, F-16, F/A-18, A-10, Apache y LHX con estética low-poly retro, render moderno, combate aéreo y ataque a tierra.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=5">
+  <link rel="stylesheet" href="css/style.css?v=7">
   <script type="importmap">
   {
     "imports": {
@@ -21,51 +21,45 @@
   <canvas id="game"></canvas>
   <canvas id="hud-canvas"></canvas>
 
-  <!-- ================= HUD ================= -->
+  <!-- ================= HUD (exterior: versión compacta; en cabina manda el HUD del avión) ================= -->
   <div id="hud" class="hidden">
-    <div id="hud-left" class="glass">
-      <div class="row"><span class="lbl" id="lbl-spd">VEL</span><span class="val" id="h-spd">0</span><span class="unit" id="u-spd">kt</span></div>
-      <div class="row"><span class="lbl">ALT</span><span class="val" id="h-alt">0</span><span class="unit" id="u-alt">ft</span></div>
-      <div class="row"><span class="lbl">V/S</span><span class="val" id="h-vs">0</span><span class="unit" id="u-vs">fpm</span></div>
-      <div class="row small"><span class="lbl">AGL</span><span class="val" id="h-agl">0</span><span class="unit" id="u-agl">ft</span></div>
-      <div class="row small"><span class="lbl">G</span><span class="val" id="h-g">1.0</span><span class="unit"></span></div>
-    </div>
-    <div id="compass"><canvas id="compass-canvas" width="520" height="44"></canvas></div>
-    <div id="hud-right" class="glass">
-      <div class="dest-title" id="dest-title">DESTINO</div>
-      <div id="h-dest" class="dest-name">—</div>
-      <div class="row"><span class="lbl">DIST</span><span class="val" id="h-dist">0</span><span class="unit">km</span></div>
-      <div class="row"><span class="lbl">RUMBO</span><span class="val" id="h-brg">000</span><span class="unit">°</span></div>
-      <div class="row small"><span class="lbl">ETA</span><span class="val" id="h-eta">--:--</span><span class="unit"></span></div>
-      <div id="h-arrow">➤</div>
-    </div>
-    <div id="hud-bottom" class="glass">
-      <div class="thr">
-        <div class="lbl" id="lbl-thr">GASES</div>
+    <div id="hud-mission" class="chip hidden"></div>
+    <div id="hud-bar" class="glass">
+      <div class="cell"><span class="lbl">VEL</span><b id="h-spd">0</b><i id="u-spd">kt</i></div>
+      <div class="cell"><span class="lbl">ALT</span><b id="h-alt">0</b><i id="u-alt">ft</i></div>
+      <div class="cell"><span class="lbl">RUMBO</span><b id="h-hdg">000</b><i>°</i></div>
+      <div class="cell thr">
+        <span class="lbl" id="lbl-thr">POT.</span>
         <div class="bar"><div id="h-thr"></div><div id="h-rpm"></div></div>
-        <div class="val" id="h-thr-v">0%</div>
+        <b id="h-thr-v">0%</b>
       </div>
-      <div class="ind" id="i-gear"><b>G</b>TREN</div>
-      <div class="ind" id="i-flaps"><b>X</b>FLAPS <span id="h-flaps">0</span></div>
-      <div class="ind" id="i-brake"><b>B</b>FRENOS</div>
-      <div class="ind" id="i-ab">POSTC.</div>
-      <div class="ind" id="i-lights"><b>L</b>LUCES</div>
-      <div class="ind" id="i-cam"><b>C</b><span id="h-cam">CABINA</span></div>
+      <div class="chips">
+        <span class="ind" id="i-gear">TREN</span>
+        <span class="ind" id="i-flaps">FLAPS</span>
+        <span class="ind" id="i-brake">FRENO</span>
+        <span class="ind" id="i-ab">PC</span>
+      </div>
+      <div class="cell nav">
+        <span class="lbl" id="dest-title">DESTINO</span>
+        <b id="h-dist">0</b><i>km</i>
+        <span id="h-arrow">➤</span>
+        <span id="h-dest" class="dest"></span>
+      </div>
+      <div class="cell arms hidden" id="hud-arms">
+        <div class="hpbar" title="Blindaje"><div id="h-hp"></div></div>
+        <span class="lbl">CAÑ</span><b id="h-ammo">0</b>
+        <span class="lbl">COH</span><b id="h-rockets">0</b>
+        <span class="lbl">PTS</span><b id="h-score">0</b>
+      </div>
     </div>
     <div id="minimap-wrap" class="glass"><canvas id="minimap" width="200" height="200"></canvas></div>
     <div id="toolbar">
+      <button id="btn-cam" title="Cámara (C)">◉</button>
       <button data-win="win-weather" title="Clima y hora (T)">☁</button>
       <button data-win="win-settings" title="Ajustes (O)">⚙</button>
       <button data-win="win-help" title="Controles (H)">?</button>
       <button id="btn-sound" title="Sonido (M)">🔊</button>
-      <button id="btn-menu" title="Menú (Esc)">☰</button>
-    </div>
-    <div id="hud-mission" class="glass hidden"></div>
-    <div id="hud-arms" class="glass hidden">
-      <div class="arm hp"><span class="lbl">BLINDAJE</span><div class="hpbar"><div id="h-hp"></div></div></div>
-      <div class="arm"><span class="lbl"><b>ESPACIO</b> CAÑÓN</span><span class="val" id="h-ammo">0</span></div>
-      <div class="arm"><span class="lbl"><b>Z</b> COHETES</span><span class="val" id="h-rockets">0</span></div>
-      <div class="arm"><span class="lbl">PUNTOS</span><span class="val" id="h-score">0</span></div>
+      <button id="btn-menu" title="Pausa (Esc)">❚❚</button>
     </div>
     <div id="messages"></div>
     <div id="warn"></div>
@@ -78,15 +72,17 @@
         <div class="logo">ENTRE <span>NUBES</span></div>
         <div class="tag">vuelo retro · render moderno</div>
       </div>
-      <div class="section-title">Modo de juego</div>
+
+      <div class="section-title"><span>01</span> Modo de juego</div>
       <div id="mode-tabs" class="modes"></div>
-      <div id="mode-desc" class="desc"></div>
-      <div class="section-title">Aeronave</div>
+
+      <div class="section-title"><span>02</span> Aeronave</div>
       <div id="cat-tabs" class="tabs"></div>
       <div id="aircraft-list" class="cards"></div>
-      <div id="aircraft-desc" class="desc"></div>
-      <div class="grid2">
-        <label>Hora del día
+
+      <div class="section-title"><span>03</span> Condiciones</div>
+      <div class="grid3">
+        <label>Hora
           <select id="opt-time">
             <option value="6.4">Amanecer</option>
             <option value="10">Mañana</option>
@@ -99,19 +95,30 @@
         <label>Clima
           <select id="opt-weather"></select>
         </label>
-        <label id="opt-dist-wrap">Distancia al destino
+        <label id="opt-dist-wrap">Destino
           <select id="opt-dist">
-            <option value="short">Corta (8–15 km)</option>
-            <option value="medium" selected>Media (20–40 km)</option>
-            <option value="long">Larga (60–120 km)</option>
+            <option value="short">Corto · 8–15 km</option>
+            <option value="medium" selected>Medio · 20–40 km</option>
+            <option value="long">Largo · 60–120 km</option>
           </select>
         </label>
       </div>
-      <div class="route" id="route-preview"></div>
+      <label class="switch"><input type="checkbox" id="opt-assist" checked><span></span> Pilotaje asistido <em>las alas se nivelan solas, virajes sin perder altura y sin pérdidas</em></label>
+
       <button id="btn-fly" class="primary">DESPEGAR ✈</button>
       <div class="menu-links">
-        <a href="#" data-win="win-help">Controles</a> · <a href="#" data-win="win-settings">Ajustes</a>
+        <a href="#" data-win="win-help">Controles</a> · <a href="#" data-win="win-settings">Ajustes</a> · <kbd>Enter</kbd> para despegar
       </div>
+    </div>
+
+    <!-- ficha de la aeronave sobre la vista 3D -->
+    <div id="spec-card" class="glass">
+      <div class="spec-role" id="spec-role"></div>
+      <div class="spec-name" id="spec-name"></div>
+      <div class="spec-livery" id="spec-livery"></div>
+      <div class="spec-desc" id="spec-desc"></div>
+      <div class="spec-bars" id="spec-bars"></div>
+      <div class="spec-data" id="spec-data"></div>
     </div>
   </div>
 
@@ -119,21 +126,31 @@
   <div id="win-settings" class="window hidden">
     <div class="win-head">Ajustes <button class="close">✕</button></div>
     <div class="win-body">
-      <label>Calidad gráfica
-        <select id="set-quality"><option value="low">Baja (sin bloom ni oclusión)</option><option value="medium" selected>Media</option><option value="high">Alta</option></select>
-      </label>
-      <label class="chk"><input type="checkbox" id="set-shadows" checked> Sombras</label>
-      <label>Volumen <input type="range" id="set-volume" min="0" max="1" step="0.05" value="0.7"></label>
-      <label>Unidades
-        <select id="set-units"><option value="aviation">Aviación (kt / ft)</option><option value="metric">Métricas (km/h / m)</option></select>
-      </label>
-      <label class="chk"><input type="checkbox" id="set-invert"> Invertir cabeceo</label>
-      <label class="chk"><input type="checkbox" id="set-mousefly"> Pilotar con el ratón (clic izq.: cañón · dcho.: cohetes)</label>
-      <label class="chk"><input type="checkbox" id="set-hud" checked> HUD en pantalla</label>
-      <label class="chk"><input type="checkbox" id="set-hud-cockpit"> Ocultar HUD en cabina</label>
-      <label class="chk"><input type="checkbox" id="set-fuel" checked> Combustible infinito</label>
-      <label>Sensibilidad del ratón <input type="range" id="set-mouse" min="0.2" max="2" step="0.1" value="1"></label>
-      <label>Campo de visión <input type="range" id="set-fov" min="50" max="95" step="1" value="72"></label>
+      <div class="group">
+        <div class="group-title">Gráficos</div>
+        <label>Calidad
+          <select id="set-quality"><option value="low">Baja · sin bloom ni oclusión</option><option value="medium" selected>Media</option><option value="high">Alta</option></select>
+        </label>
+        <label class="switch"><input type="checkbox" id="set-shadows" checked><span></span> Sombras</label>
+        <label class="switch"><input type="checkbox" id="set-edges" checked><span></span> Contornos marcados (aristas)</label>
+        <label>Campo de visión <output id="fov-val">72°</output><input type="range" id="set-fov" min="50" max="95" step="1" value="72"></label>
+      </div>
+      <div class="group">
+        <div class="group-title">Pilotaje</div>
+        <label class="switch"><input type="checkbox" id="set-assist" checked><span></span> Pilotaje asistido</label>
+        <label class="switch"><input type="checkbox" id="set-mousefly"><span></span> Pilotar con el ratón <em>clic izq. cañón · dcho. cohetes</em></label>
+        <label class="switch"><input type="checkbox" id="set-invert"><span></span> Invertir cabeceo</label>
+        <label>Sensibilidad del ratón <input type="range" id="set-mouse" min="0.2" max="2" step="0.1" value="1"></label>
+        <label class="switch"><input type="checkbox" id="set-fuel" checked><span></span> Combustible infinito</label>
+      </div>
+      <div class="group">
+        <div class="group-title">Interfaz y sonido</div>
+        <label class="switch"><input type="checkbox" id="set-hud" checked><span></span> HUD en vista exterior</label>
+        <label>Unidades
+          <select id="set-units"><option value="aviation">Aviación · kt / ft</option><option value="metric">Métricas · km/h / m</option></select>
+        </label>
+        <label>Volumen <input type="range" id="set-volume" min="0" max="1" step="0.05" value="0.7"></label>
+      </div>
     </div>
   </div>
 
@@ -141,10 +158,10 @@
     <div class="win-head">Clima y hora <button class="close">✕</button></div>
     <div class="win-body">
       <div id="weather-buttons" class="btn-grid"></div>
-      <label>Hora: <span id="time-label">12:00</span>
+      <label>Hora <output id="time-label">12:00</output>
         <input type="range" id="set-time" min="0" max="24" step="0.1" value="12">
       </label>
-      <label class="chk"><input type="checkbox" id="set-timeflow"> Ciclo de día y noche (24 min)</label>
+      <label class="switch"><input type="checkbox" id="set-timeflow"><span></span> Ciclo de día y noche (24 min)</label>
     </div>
   </div>
 
@@ -153,46 +170,41 @@
     <div class="win-body help">
       <table>
         <tr><th colspan="2">Avión</th></tr>
-        <tr><td>W / S · ↑ / ↓</td><td>Picar / encabritar</td></tr>
-        <tr><td>A / D · ← / →</td><td>Alabear</td></tr>
+        <tr><td>W / S · ↑ / ↓</td><td>Bajar / subir el morro</td></tr>
+        <tr><td>A / D · ← / →</td><td>Alabear (con pilotaje asistido: girar; al soltar se nivela)</td></tr>
         <tr><td>Q / E</td><td>Timón (y dirección en tierra)</td></tr>
-        <tr><td>Shift / Ctrl · R / F · Re Pág / Av Pág</td><td>Aumentar / reducir potencia</td></tr>
-        <tr><td>1 … 0</td><td>Gases 10 % … 100 %</td></tr>
-        <tr><td>G</td><td>Subir / bajar tren</td></tr>
-        <tr><td>X</td><td>Flaps (escalonados)</td></tr>
-        <tr><td>B</td><td>Frenos de rueda / aerofreno (mantener) · <b>P</b> freno de estacionamiento</td></tr>
+        <tr><td>Shift / Ctrl · R / F</td><td>Más / menos potencia</td></tr>
+        <tr><td>1 … 0</td><td>Potencia 10 % … 100 %</td></tr>
+        <tr><td>G · X · B</td><td>Tren · flaps · frenos/aerofreno (mantener) — <b>P</b> freno de mano</td></tr>
         <tr><th colspan="2">Helicóptero</th></tr>
-        <tr><td>Shift / Ctrl · R / F</td><td>Colectivo (50 % = estacionario, más sube, menos baja)</td></tr>
-        <tr><td>W / S · A / D</td><td>Cíclico (inclinar)</td></tr>
-        <tr><td>Q / E</td><td>Pedales (guiñada)</td></tr>
+        <tr><td>Shift / Ctrl · R / F</td><td>Colectivo (50 % = estacionario)</td></tr>
+        <tr><td>W / S</td><td>Avanzar / frenar (inclina el morro)</td></tr>
+        <tr><td>A / D</td><td>Girar e inclinar (con pilotaje asistido)</td></tr>
+        <tr><td>Q / E</td><td>Pedales (girar sobre sí mismo)</td></tr>
         <tr><th colspan="2">Armas (modos de combate)</th></tr>
-        <tr><td>Espacio</td><td>Cañón</td></tr>
-        <tr><td>Z</td><td>Cohetes no guiados</td></tr>
-        <tr><th colspan="2">Cámara y vista</th></tr>
+        <tr><td>Espacio · Z</td><td>Cañón · cohetes no guiados</td></tr>
+        <tr><th colspan="2">Cámara</th></tr>
         <tr><td>C</td><td>Cabina / exterior / pasada</td></tr>
-        <tr><td>Arrastrar ratón</td><td>Girar la cabeza (cabina) u orbitar (exterior)</td></tr>
-        <tr><td>Rueda</td><td>Zoom</td></tr>
-        <tr><td>V / Doble clic</td><td>Centrar la vista</td></tr>
-        <tr><td>Teclado numérico 4 6 8 2 5</td><td>Mirar izquierda / derecha / arriba / atrás / centro</td></tr>
+        <tr><td>Arrastrar ratón · rueda</td><td>Mirar alrededor · zoom</td></tr>
+        <tr><td>V / doble clic</td><td>Centrar la vista</td></tr>
+        <tr><td>Teclado numérico</td><td>Vistas rápidas (4 6 8 2 5)</td></tr>
         <tr><th colspan="2">General</th></tr>
-        <tr><td>L</td><td>Luces de aterrizaje y navegación</td></tr>
-        <tr><td>T · O · H</td><td>Clima · Ajustes · Ayuda</td></tr>
-        <tr><td>N</td><td>Nuevo destino desde la posición actual</td></tr>
-        <tr><td>M</td><td>Silenciar</td></tr>
-        <tr><td>Esc</td><td>Pausa / menú</td></tr>
-        <tr><td>Enter</td><td>Reiniciar tras accidente</td></tr>
+        <tr><td>L · N · M</td><td>Luces · nuevo destino · silencio</td></tr>
+        <tr><td>T · O · H</td><td>Clima · ajustes · ayuda</td></tr>
+        <tr><td>Esc · Enter</td><td>Pausa · reiniciar tras accidente</td></tr>
       </table>
-      <p>También funciona con mando (gamepad): sticks para cíclico/timón, gatillos para gases, RB cañón, LB cohetes, A tren, B frenos, Y cámara.</p>
+      <p>Con mando: sticks para mandos de vuelo, gatillos para potencia, RB cañón, LB cohetes, A tren, B frenos, Y cámara.</p>
     </div>
   </div>
 
   <div id="pause" class="overlay hidden">
     <div class="pause-panel glass">
-      <h2>Pausa</h2>
+      <h2>PAUSA</h2>
       <button id="btn-resume" class="primary">Continuar</button>
       <button id="btn-newdest">Nuevo destino desde aquí</button>
       <button id="btn-restart">Reiniciar vuelo</button>
-      <button id="btn-mainmenu">Cambiar aeronave / nuevo vuelo</button>
+      <button id="btn-settings2" data-win="win-settings">Ajustes</button>
+      <button id="btn-mainmenu">Menú principal</button>
     </div>
   </div>
 
@@ -208,6 +220,6 @@
 
   <div id="loading" class="overlay hidden"><div class="spinner"></div><div id="loading-text">Generando terreno…</div></div>
   <noscript>Este simulador necesita JavaScript y WebGL.</noscript>
-  <script type="module" src="js/main.js?v=5"></script>
+  <script type="module" src="js/main.js?v=7"></script>
 </body>
 </html>

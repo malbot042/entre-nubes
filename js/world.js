@@ -2,8 +2,8 @@
 // ciudades, pueblos, granjas, bosques, aerogeneradores y aeropuertos.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Noise2D, mulberry32, hash2, clamp, lerp, smoothstep, randomPlaceName, randomICAO } from './util.js?v=5';
-import { buildModel } from './models.js?v=5';
+import { Noise2D, mulberry32, hash2, clamp, lerp, smoothstep, randomPlaceName, randomICAO } from './util.js?v=7';
+import { buildModel } from './models.js?v=7';
 
 export const CHUNK = 1000;
 const CITY_CELL = 6000;
@@ -550,11 +550,11 @@ export class World {
     ws.add(sock); ws.position.set(-60, 0, -L / 2 + 300); grp.add(ws);
     ap.windsock = ws;
     // Aviones aparcados
-    const parked = ['b737', 'b737', 'learjet', 'c172', 'b737'];
+    const parked = ['f16', 'f18', 'a10', 'f14', 'apache'];
     parked.forEach((id, i) => {
       try {
         const bm = buildModel(id), m = bm.group;
-        m.position.set(id === 'b737' ? 262 : 250, bm.gearHeight + 0.26, -170 + i * 70);
+        m.position.set(250, bm.gearHeight + 0.26, -170 + i * 70);
         m.rotation.y = Math.PI / 2;
         for (const d of bm.parts.discs) d.visible = false;
         m.traverse(o => { if (o.isMesh) o.castShadow = true; });

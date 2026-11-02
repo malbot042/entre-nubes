@@ -1,10 +1,10 @@
 // HUD táctico sobre el canvas 3D: retícula, marcadores, adelanto de tiro y flechas fuera de pantalla.
 import * as THREE from 'three';
-import { BULLET_SPEED } from './combat.js?v=5';
+import { BULLET_SPEED } from './combat.js?v=7';
 
 const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _f = new THREE.Vector3();
-const CY = '#3df2ff', RD = '#ff4a3c', GR = '#3dff9e', AM = '#ffc14d';
-const LABELS = { tank: 'TANQUE', aaa: 'ANTIAÉREO', bunker: 'BÚNKER', truck: 'CAMIÓN', ring: 'ANILLO', toma: 'TOMA' };
+const CY = '#3df2ff', RD = '#ff4a3c', AM = '#ffc14d';
+const LABELS = { tank: 'TANQUE', aaa: 'ANTIAÉREO', bunker: 'BÚNKER', truck: 'CAMIÓN' };
 
 export class TacticalHUD {
   constructor(canvas) {
@@ -72,16 +72,13 @@ export class TacticalHUD {
     const list = markers.map(m => { const d = m.pos.distanceTo(fm.pos); if (d < nd) { nd = d; nearest = m; } return { m, d }; });
     for (const { m, d } of list) {
       this.toScreen(m.pos, camera, s);
-      const col = m.ring ? GR : m.air ? RD : AM;
+      const col = m.air ? RD : AM;
       if (s.on) {
-        const r = m.ring ? 15 : Math.max(9, Math.min(24, 1500 / d * 8));
+        const r = Math.max(9, Math.min(24, 1500 / d * 8));
         g.beginPath();
-        if (m.ring) { g.moveTo(s.x, s.y - r); g.lineTo(s.x + r, s.y); g.lineTo(s.x, s.y + r); g.lineTo(s.x - r, s.y); g.closePath(); }
-        else {
-          const c = r * 0.45;
-          for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-            g.moveTo(s.x + sx * r, s.y + sy * (r - c)); g.lineTo(s.x + sx * r, s.y + sy * r); g.lineTo(s.x + sx * (r - c), s.y + sy * r);
-          }
+        const c = r * 0.45;
+        for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+          g.moveTo(s.x + sx * r, s.y + sy * (r - c)); g.lineTo(s.x + sx * r, s.y + sy * r); g.lineTo(s.x + sx * (r - c), s.y + sy * r);
         }
         this.stroke(col, 1.5);
         if (m === nearest || d < 450) {

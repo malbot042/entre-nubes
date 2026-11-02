@@ -1,12 +1,11 @@
-// Modos de juego: ataque a tierra (CAS), interceptación aérea y circuito de anillos.
+// Modos de juego: ataque a tierra (CAS) e interceptación aérea.
 import * as THREE from 'three';
-import { clamp, lerp, mulberry32 } from './util.js?v=5';
+import { mulberry32 } from './util.js?v=7';
 
 export const MODES = [
   { id: 'free', name: 'Vuelo libre', icon: '☁', desc: 'Exploración sin límites sobre un mundo infinito, con ciclo de día y noche en tiempo real. Elige un destino y aterriza.' },
   { id: 'cas', name: 'Ataque a tierra', icon: '⌖', desc: 'Apoyo aéreo cercano: destruye tanques, antiaéreos y búnkeres con cañón y cohetes no guiados. Vuela bajo y vigila la flak.' },
   { id: 'dogfight', name: 'Interceptación', icon: '✈', desc: 'Dogfight contra oleadas de cazas enemigos con maniobras evasivas. Cada oleada es mayor y más precisa.' },
-  { id: 'rings', name: 'Anillos y precisión', icon: '◎', desc: 'Circuito de anillos de neón contra el crono: cada anillo acelera. Termina con un aterrizaje de precisión en pista o helipuerto.' },
 ];
 export const isCombat = (m) => m === 'cas' || m === 'dogfight';
 
@@ -168,189 +167,8 @@ class Dogfight extends Base {
   onCrash(reason) { this.failed(reason); }
 }
 
-// ==================== ANILLOS Y ATERRIZAJE DE PRECISIÓN ====================
-class Rings extends Base {
-  get combat() { return null; }
-  start() {
-    const c = this.ctx, w = c.world, sp = c.spec, ap = c.dest, o = c.origin;
-    this.clearRings();
-    this.isHeli = sp.type === 'heli';
-    this.index = 0; this.t = 0; this.running = false; this.phase = 'rings'; this.touch = null; this.missed = 0;
-    this.radius = this.isHeli ? 32 : clamp(26 + sp.vs * 0.35, 34, 52);
-    const start = w.localToWorld(o, 0, o.len / 2 + 900);
-    // Final: eje de pista por el extremo más cercano, o directo al helipuerto
-    let aim, finals;
-    if (this.isHeli) {
-      aim = ap.helipad;
-      const dx = aim.x - start.x, dz = aim.z - start.z, l = Math.hypot(dx, dz);
-      finals = [{ x: aim.x - dx / l * 420, z: aim.z - dz / l * 420, agl: 60, elev: ap.elev }];
-    } else {
-      const s = Math.hypot(start.x - ap.x - ap.dir.x * ap.len / 2, start.z - ap.z - ap.dir.z * ap.len / 2) <
-        Math.hypot(start.x - ap.x + ap.dir.x * ap.len / 2, start.z - ap.z + ap.dir.z * ap.len / 2) ? 1 : -1;
-      this.end = s;
-      aim = w.localToWorld(ap, 0, s * (ap.len / 2 - 300));
-      const gs = Math.tan(3.2 * Math.PI / 180);
-      finals = [2400, 1300].map(d => {
-        const p = w.localToWorld(ap, 0, s * (ap.len / 2 + d));
-        return { x: p.x, z: p.z, agl: Math.max(36, (d + 300) * gs), elev: ap.elev };
-      });
-    }
-    this.aim = aim;
-    // Trazado sinuoso entre la salida y la final
-    const pts = [], N = 12, f0 = finals[0];
-    const dx = f0.x - start.x, dz = f0.z - start.z, L = Math.hypot(dx, dz), nx = -dz / L, nz = dx / L;
-    const rnd = mulberry32(c.seed + 17);
-    const ph = rnd() * 6.28, amp = Math.min(520, L * 0.05);
-    const baseAgl = this.isHeli ? 70 : 130;
-    for (let i = 0; i < N; i++) {
-      const t = (i + 0.5) / N;
-      const off = Math.sin(t * Math.PI * 2.4 + ph) * amp * Math.sin(t * Math.PI);
-      const x = start.x + dx * t + nx * off, z = start.z + dz * t + nz * off;
-      let gh = 0;
-      for (const d of [-260, 0, 260]) gh = Math.max(gh, w.height(x + dx / L * d, z + dz / L * d));
-      const blend = clamp((t - 0.72) / 0.28, 0, 1);
-      const y = lerp(Math.max(gh, 0) + baseAgl + 45 * Math.sin(i * 1.7 + ph), Math.max(ap.elev + (finals[0].agl + 40), Math.max(gh, 0) + 60), blend);
-      pts.push({ x, y, z });
-    }
-    // la final sigue la senda de planeo, pero nunca deja el anillo enterrado en una loma
-    const margin = this.radius + 10;
-    for (const f of finals) pts.push({ x: f.x, y: Math.max(f.elev + f.agl, Math.max(w.height(f.x, f.z), 0) + margin), z: f.z });
-    // suavizado de altitud para que el circuito no exija bruscos cabeceos
-    for (let k = 0; k < 2; k++) for (let i = 1; i < N - 1; i++) pts[i].y = Math.max((pts[i - 1].y + pts[i].y * 2 + pts[i + 1].y) / 4, Math.max(w.height(pts[i].x, pts[i].z), 0) + margin + 12);
-    this.rings = pts.map((p, i) => {
-      const a = i > 0 ? pts[i - 1] : { x: start.x, y: p.y, z: start.z };
-      const b = i < pts.length - 1 ? pts[i + 1] : { x: aim.x, y: ap.elev, z: aim.z };
-      const n = new THREE.Vector3(b.x - a.x, (b.y - a.y) * 0.6, b.z - a.z).normalize();
-      return { pos: new THREE.Vector3(p.x, p.y, p.z), n, side: 0, mesh: null, done: false };
-    });
-    const geo = new THREE.TorusGeometry(this.radius, 1.5, 6, 20);
-    for (const r of this.rings) {
-      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x20ff88, toneMapped: false, fog: false }));
-      m.position.copy(r.pos);
-      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), r.n);
-      c.scene.add(m);
-      r.mesh = m;
-    }
-    this.geo = geo;
-    this.colorRings();
-    c.toast('Atraviesa los anillos en orden. El crono empieza en el primero.', 'good', 6000);
-  }
-  colorRings() {
-    this.rings.forEach((r, i) => {
-      const col = r.mesh.material.color;
-      if (r.done) { r.mesh.visible = false; return; }
-      r.mesh.visible = true;
-      if (i === this.index) col.setRGB(0.25, 5.5, 2.6);
-      else if (i === this.index + 1) col.setRGB(5, 1.1, 4.4);
-      else col.setRGB(1.1, 0.5, 2.6);
-    });
-  }
-  clearRings() {
-    if (!this.rings) return;
-    for (const r of this.rings) { this.ctx.scene.remove(r.mesh); r.mesh.material.dispose(); }
-    this.geo?.dispose();
-    this.rings = null;
-  }
-  dispose() { this.clearRings(); }
-  nav() {
-    const c = this.ctx;
-    if (this.phase === 'rings' && this.rings[this.index]) {
-      const r = this.rings[this.index];
-      return { x: r.pos.x, z: r.pos.z, icao: `ANILLO ${this.index + 1}`, name: `de ${this.rings.length}` };
-    }
-    return { x: this.aim.x, z: this.aim.z, icao: c.dest.icao, name: this.isHeli ? 'Helipuerto' : 'Punto de toma' };
-  }
-  markers() {
-    if (this.phase === 'rings' && this.rings[this.index]) return [{ pos: this.rings[this.index].pos, label: 'ring', ring: true }];
-    return [{ pos: new THREE.Vector3(this.aim.x, this.ctx.dest.elev + 2, this.aim.z), label: 'toma', ring: true }];
-  }
-  panel() {
-    if (!this.rings) return '';
-    const n = this.rings.length;
-    return `<b>${fmtT(this.t)}</b> ${this.phase === 'rings' ? `Anillo ${Math.min(this.index + 1, n)}/${n}` : (this.isHeli ? 'Posa en el helipuerto' : 'Aterriza en el punto de toma')}`;
-  }
-  pass(i) {
-    const c = this.ctx, r = this.rings[i], fm = c.fm;
-    r.done = true;
-    this.index = i + 1;
-    if (!this.running) { this.running = true; this.t = 0; }
-    c.audio.ring(i);
-    c.fx.spark(r.pos, 1, 7, 4, 26);
-    // empuje del anillo: acelera en la dirección de vuelo sin pasar de la velocidad máxima
-    const v = fm.vel.length();
-    const vmax = c.spec.vmax;
-    if (v > 5 && v < vmax) fm.vel.multiplyScalar(Math.min(1 + (this.isHeli ? 0.07 : 0.09), vmax / v));
-    if (this.index >= this.rings.length) {
-      this.phase = 'landing';
-      c.toast(this.isHeli ? 'Circuito completado: posa en la H' : 'Circuito completado: aterriza en la zona de toma', 'good', 5000);
-    }
-    this.colorRings();
-  }
-  update(dt) {
-    const c = this.ctx, fm = c.fm;
-    if (!this.rings || this.done) return;
-    if (this.running) this.t += dt;
-    if (this.phase === 'rings') {
-      // detección por cruce del plano del anillo
-      for (let i = this.index; i < Math.min(this.index + 3, this.rings.length); i++) {
-        const r = this.rings[i];
-        const dv = fm.pos.clone().sub(r.pos);
-        const s = dv.dot(r.n);
-        const inside = dv.addScaledVector(r.n, -s).length() < this.radius;
-        if (r.side < 0 && s >= 0 && inside) {
-          if (i > this.index) { this.missed += i - this.index; for (let k = this.index; k < i; k++) this.rings[k].done = true; this.t += 5 * (i - this.index); c.toast(`Anillo perdido: +${5 * (i - this.index)} s`, 'bad'); }
-          this.pass(i); break;
-        }
-        r.side = Math.sign(s) || r.side;
-      }
-      // un anillo sobrepasado y lejos se da por perdido
-      const r = this.rings[this.index];
-      if (r) {
-        const dv = fm.pos.clone().sub(r.pos);
-        if (dv.dot(r.n) > 350) {
-          r.done = true; this.index++; this.missed++; this.t += 5;
-          c.toast('Anillo perdido: +5 s', 'bad');
-          if (this.index >= this.rings.length) this.phase = 'landing';
-          this.colorRings();
-        }
-      }
-    } else if (fm.onGround && Math.hypot(fm.vel.x, fm.vel.z) < 2.5) {
-      const away = Math.hypot(fm.pos.x - this.aim.x, fm.pos.z - this.aim.z);
-      if (this.isHeli ? away < 400 : this.touch) this.finish(away);
-    }
-  }
-  onTouchdown(ev) {
-    if (this.phase !== 'landing' || this.touch) return;
-    const fm = this.ctx.fm;
-    this.touch = { dist: Math.hypot(fm.pos.x - this.aim.x, fm.pos.z - this.aim.z), fpm: ev.impact * 196.85 };
-  }
-  finish(away) {
-    this.done = true;
-    const c = this.ctx;
-    const ap = c.dest, local = c.world.airportLocal(ap, c.fm.pos.x, c.fm.pos.z);
-    const offset = this.isHeli ? away : (this.touch?.dist ?? 9999);
-    const fpm = this.touch?.fpm ?? 0;
-    const onRunway = this.isHeli || (Math.abs(local.v) < ap.width && Math.abs(local.u) < ap.len / 2);
-    const pOff = Math.max(0, (this.isHeli ? 1000 : 1000) - offset * (this.isHeli ? 25 : 2.2));
-    const pFpm = Math.max(0, 1000 - fpm * 2);
-    const pRings = (this.rings.length - this.missed) * 300;
-    const pTime = Math.max(0, Math.round(2400 - this.t * 12));
-    const score = onRunway ? Math.round(pOff + pFpm + pRings + pTime) : Math.round((pRings + pTime) * 0.5);
-    const best = c.saveBest('rings:' + c.spec.id, score);
-    c.audio.chime();
-    c.showResult({
-      title: onRunway ? 'Aterrizaje de precisión' : 'Fuera de pista', big: `${score} pts`,
-      html: `Tiempo: <b>${fmtT(this.t)}</b> · Anillos: <b>${this.rings.length - this.missed}/${this.rings.length}</b><br>
-        Desvío del punto de toma: <b>${Math.round(offset)} m</b><br>Velocidad vertical: <b>${Math.round(fpm)} ft/min</b><br>Récord con esta aeronave: <b>${best}</b>`,
-      primary: ['Repetir', () => c.restart()], secondary: ['Menú', () => c.toMenu()],
-    });
-  }
-  onCrash(reason) { this.failed(reason); }
-}
-
 export function createMission(mode, ctx) {
   if (mode === 'cas') return new CAS(ctx);
   if (mode === 'dogfight') return new Dogfight(ctx);
-  if (mode === 'rings') return new Rings(ctx);
   return null;
 }

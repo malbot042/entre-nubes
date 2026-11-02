@@ -1,23 +1,29 @@
 // Entre Nubes — bucle principal, cámaras, entrada, HUD y menús.
 import * as THREE from 'three';
-import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=5';
-import { buildModel } from './models.js?v=5';
-import { Cockpit } from './cockpit.js?v=5';
-import { FlightModel } from './physics.js?v=5';
-import { World, CHUNK } from './world.js?v=5';
-import { Environment, WEATHER } from './environment.js?v=5';
-import { AudioEngine } from './audio.js?v=5';
-import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=5';
-import { PostFX } from './postfx.js?v=5';
-import { Particles } from './effects.js?v=5';
-import { Combat } from './combat.js?v=5';
-import { MODES, createMission, isCombat } from './missions.js?v=5';
-import { TacticalHUD } from './hud.js?v=5';
+import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=7';
+import { buildModel } from './models.js?v=7';
+import { Cockpit } from './cockpit.js?v=7';
+import { FlightModel } from './physics.js?v=7';
+import { World, CHUNK } from './world.js?v=7';
+import { Environment, WEATHER } from './environment.js?v=7';
+import { AudioEngine } from './audio.js?v=7';
+import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=7';
+import { PostFX } from './postfx.js?v=7';
+import { Particles } from './effects.js?v=7';
+import { Combat } from './combat.js?v=7';
+import { MODES, createMission, isCombat } from './missions.js?v=7';
+import { TacticalHUD } from './hud.js?v=7';
+import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=7';
 
 // ---------------- Ajustes persistentes ----------------
-const DEFAULTS = { aircraft: 'c172', time: '13', weather: 'clear', dist: 'medium', start: 'runway', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, hud: true, hudCockpit: false, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, best: {} };
+const DEFAULTS = { aircraft: 'f16', time: '13', weather: 'clear', dist: 'medium', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, hud: true, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, assist: true, edges: true, best: {} };
 let settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('entrenubes2') || '{}')); } catch (_) { }
+// ajustes guardados de versiones anteriores (aeronaves o modos retirados)
+if (!AIRCRAFT_BY_ID[settings.aircraft]) settings.aircraft = DEFAULTS.aircraft;
+if (!MODES.some(m => m.id === settings.mode)) settings.mode = 'free';
+// HUD rediseñado: se vuelve a mostrar una vez aunque estuviera oculto en la versión anterior
+if ((settings.schema || 0) < 2) { settings.hud = true; settings.schema = 2; }
 const save = () => { try { localStorage.setItem('entrenubes2', JSON.stringify(settings)); } catch (_) { } };
 
 // ---------------- Render ----------------
@@ -38,6 +44,7 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(settings.fov, innerWidth / innerHeight, 0.5, 45000);
 scene.add(camera);
 const env = new Environment(scene, renderer);
+createEnvMap(renderer);
 const audio = new AudioEngine();
 audio.setVolume(settings.volume);
 env.onThunder = () => audio.thunder();
@@ -121,14 +128,16 @@ document.querySelectorAll('.window .win-head').forEach(h => {
 });
 
 // ---------------- Menú ----------------
-let currentCat = AIRCRAFT_BY_ID[settings.aircraft]?.cat || 'light';
+let currentCat = AIRCRAFT_BY_ID[settings.aircraft]?.cat || 'plane';
 const unarmedFor = (a, mode) => isCombat(mode) && !a.arms;
+const MODE_SUB = { free: 'Explora y aterriza', cas: 'Tanques y antiaéreos', dogfight: 'Oleadas de cazas' };
 function buildModes() {
   const box = $('mode-tabs'); box.innerHTML = '';
   for (const m of MODES) {
     const b = document.createElement('button');
     b.className = 'mode' + (m.id === settings.mode ? ' active' : '');
-    b.innerHTML = `<i>${m.icon}</i>${m.name}`;
+    b.innerHTML = `<i>${m.icon}</i>${m.name}<small>${MODE_SUB[m.id] || ''}</small>`;
+    b.title = m.desc;
     b.onclick = () => {
       settings.mode = m.id;
       // los modos de combate exigen una aeronave armada
@@ -141,9 +150,8 @@ function buildModes() {
     };
     box.appendChild(b);
   }
-  $('mode-desc').textContent = MODES.find(m => m.id === settings.mode)?.desc || '';
-  $('opt-dist-wrap').style.display = settings.mode === 'free' ? '' : 'none';
-  $('btn-fly').textContent = settings.mode === 'free' ? 'DESPEGAR ✈' : isCombat(settings.mode) ? 'A COMBATE ✈' : 'A LOS ANILLOS ✈';
+  $('opt-dist-wrap').style.visibility = settings.mode === 'free' ? '' : 'hidden';
+  $('btn-fly').textContent = settings.mode === 'free' ? 'DESPEGAR ✈' : 'A COMBATE ✈';
 }
 function buildMenu() {
   buildModes();
@@ -157,13 +165,12 @@ function buildMenu() {
   for (const a of AIRCRAFT.filter(a => a.cat === currentCat)) {
     const locked = unarmedFor(a, settings.mode);
     const d = document.createElement('div'); d.className = 'card' + (a.id === settings.aircraft ? ' active' : '') + (locked ? ' locked' : '');
-    const kmh = Math.round(a.vmax * 3.6);
-    d.innerHTML = `<div class="n">${a.name}</div><div class="s">${locked ? 'Sin armamento' : `${kmh} km/h · ${(a.mass / 1000).toFixed(1)} t`}</div>`;
+    d.innerHTML = `<div class="n">${a.name}</div><div class="s">${locked ? 'Sin armamento' : a.role}</div><div class="tag">${Math.round(a.vmax * 3.6)} km/h</div>`;
     d.onclick = () => { if (locked) return; settings.aircraft = a.id; save(); buildMenu(); showPreview(); };
     list.appendChild(d);
   }
-  const sp = AIRCRAFT_BY_ID[settings.aircraft];
-  $('aircraft-desc').textContent = sp ? sp.desc : '';
+  fillSpecCard(AIRCRAFT_BY_ID[settings.aircraft]);
+  $('opt-assist').checked = settings.assist;
   const ws = $('opt-weather');
   if (!ws.options.length) for (const [k, w] of Object.entries(WEATHER)) ws.add(new Option(w.name, k));
   ws.value = settings.weather; $('opt-time').value = settings.time; $('opt-dist').value = settings.dist;
@@ -174,8 +181,23 @@ for (const id of ['opt-weather', 'opt-time', 'opt-dist']) {
     settings.dist = $('opt-dist').value; save();
   });
 }
+function fillSpecCard(a) {
+  if (!a) return;
+  $('spec-role').textContent = a.role;
+  $('spec-name').textContent = a.name;
+  $('spec-livery').textContent = a.livery;
+  $('spec-desc').textContent = a.desc;
+  const pips = (n) => Array.from({ length: 5 }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('');
+  const r = a.rating;
+  $('spec-bars').innerHTML = [['VELOCIDAD', r.speed], ['AGILIDAD', r.agility], ['BLINDAJE', r.armor], ['FUEGO', r.fire]]
+    .map(([l, v]) => `<span>${l}</span><div class="pips">${pips(v)}</div>`).join('');
+  const arms = a.arms;
+  $('spec-data').innerHTML = `<span>Vmáx <b>${Math.round(a.vmax * 3.6)} km/h</b></span><span>Masa <b>${(a.mass / 1000).toFixed(1)} t</b></span>` +
+    (arms ? `<span>Cañón <b>${arms.gun.ammo}</b></span><span>Cohetes <b>${arms.rockets}</b></span>` : '');
+}
+$('opt-assist').addEventListener('change', () => { settings.assist = $('opt-assist').checked; $('set-assist').checked = settings.assist; save(); });
 function showPreview() {
-  if (menuModel) menuScene.remove(menuModel.group);
+  if (menuModel) { menuScene.remove(menuModel.group); forgetEdges(menuModel.group); }
   menuModel = buildModel(settings.aircraft);
   const g = menuModel.group;
   g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
@@ -185,6 +207,7 @@ function showPreview() {
   menuScene.add(g);
   menuModel.size = size;
   for (const d of menuModel.parts.discs) d.material.opacity = 0;
+  setEdgesVisible(settings.edges);
 }
 $('btn-fly').addEventListener('click', () => { audio.init(); startFlight(); });
 
@@ -197,13 +220,16 @@ function bindSettings() {
   const v = $('set-volume'); v.value = settings.volume; v.oninput = () => { settings.volume = +v.value; save(); audio.setVolume(settings.volume); };
   const u = $('set-units'); u.value = settings.units; u.onchange = () => { settings.units = u.value; save(); };
   const inv = $('set-invert'); inv.checked = settings.invert; inv.onchange = () => { settings.invert = inv.checked; save(); };
-  const hud = $('set-hud'); hud.checked = settings.hud; hud.onchange = () => { settings.hud = hud.checked; save(); };
-  const hc = $('set-hud-cockpit'); hc.checked = settings.hudCockpit; hc.onchange = () => { settings.hudCockpit = hc.checked; save(); };
+  const hud = $('set-hud'); hud.checked = settings.hud; hud.onchange = () => { settings.hud = hud.checked; save(); $('hud').classList.toggle('nohud', !settings.hud); };
+  $('hud').classList.toggle('nohud', !settings.hud);
+  const ed = $('set-edges'); ed.checked = settings.edges; ed.onchange = () => { settings.edges = ed.checked; save(); setEdgesVisible(settings.edges); };
+  const as = $('set-assist'); as.checked = settings.assist; as.onchange = () => { settings.assist = as.checked; $('opt-assist').checked = as.checked; save(); toast(settings.assist ? 'Pilotaje asistido activado' : 'Pilotaje asistido desactivado'); };
   const fu = $('set-fuel'); fu.checked = settings.fuel; fu.onchange = () => { settings.fuel = fu.checked; save(); if (state.fm) state.fm.infiniteFuel = fu.checked; };
   const ms = $('set-mouse'); ms.value = settings.mouse; ms.oninput = () => { settings.mouse = +ms.value; save(); };
   const mf = $('set-mousefly'); mf.checked = settings.mouseFly; mf.onchange = () => { settings.mouseFly = mf.checked; save(); };
   const tf = $('set-timeflow'); tf.checked = settings.timeflow; tf.onchange = () => { settings.timeflow = tf.checked; save(); };
-  const fov = $('set-fov'); fov.value = settings.fov; fov.oninput = () => { settings.fov = +fov.value; save(); };
+  const fov = $('set-fov'); fov.value = settings.fov; $('fov-val').textContent = settings.fov + '°';
+  fov.oninput = () => { settings.fov = +fov.value; $('fov-val').textContent = settings.fov + '°'; save(); };
   // clima
   const wb = $('weather-buttons'); wb.innerHTML = '';
   for (const [k, w] of Object.entries(WEATHER)) {
@@ -243,8 +269,7 @@ async function startFlight(keepWorld = false) {
     const world = new World(state.seed, scene, settings.quality);
     state.world = world;
     state.origin = world.addAirport(0, 0, rnd, false);
-    if (settings.mode === 'rings') makeDestination(state.origin.x, state.origin.z, state.origin.hdg + (rnd() - 0.5) * 0.9, rnd, [11000, 16000]);
-    else makeDestination(state.origin.x, state.origin.z, rnd() * Math.PI * 2, rnd);
+    makeDestination(state.origin.x, state.origin.z, rnd() * Math.PI * 2, rnd);
   }
   env.setTime(parseFloat(settings.time));
   env.setWeather(settings.weather, true);
@@ -256,6 +281,11 @@ async function startFlight(keepWorld = false) {
   setLoading(true, 'Cargando escenario…');
   await new Promise(r => setTimeout(r, 20));
   state.world.update(state.fm.pos, 0, 0, true);
+  // precompila los shaders con la pantalla de carga visible: evita tirones al empezar a volar
+  setLoading(true, 'Preparando shaders…');
+  await new Promise(r => setTimeout(r, 20));
+  updateCamera(0);
+  if (renderer.compileAsync) await renderer.compileAsync(scene, camera); else renderer.compile(scene, camera);
   setLoading(false);
   state.mode = 'flying';
   $('hud').classList.remove('hidden');
@@ -335,7 +365,7 @@ const navGlowTex = (() => {
 })();
 
 function spawnAircraft(id, start) {
-  if (state.model) { scene.remove(state.model.group); }
+  if (state.model) { scene.remove(state.model.group); forgetEdges(state.model.group); }
   particles.clear();
   const spec = AIRCRAFT_BY_ID[id];
   state.spec = spec;
@@ -414,8 +444,9 @@ function spawnAircraft(id, start) {
   state.arrived = false; state.flightTime = 0; state.distFlown = 0; state.lastTouch = null;
   state.lights = env.night > 0.4;
   setCamera(state.cam === 'flyby' ? 'chase' : state.cam);
+  setEdgesVisible(settings.edges);
   audio.setAircraft(spec);
-  $('lbl-thr').textContent = spec.type === 'heli' ? 'COLECT.' : 'GASES';
+  $('lbl-thr').textContent = spec.type === 'heli' ? 'COLECT.' : 'POT.';
   $('i-gear').style.display = spec.gearFixed || (spec.type === 'heli' && !spec.gearRetract) ? 'none' : '';
   $('i-flaps').style.display = spec.flaps ? '' : 'none';
   $('i-ab').style.display = spec.ab ? '' : 'none';
@@ -436,7 +467,7 @@ function setCamera(mode) {
     if (mode === 'flyby') placeFlyby();
   }
   camera.updateProjectionMatrix();
-  $('h-cam').textContent = { cockpit: 'CABINA', chase: 'EXTERIOR', flyby: 'PASADA' }[mode];
+  $('hud').classList.toggle('cockpit', cockpit);
 }
 
 function placeFlyby() {
@@ -481,8 +512,10 @@ function togglePause(p = !state.paused) {
 $('btn-resume').onclick = () => togglePause(false);
 $('btn-restart').onclick = () => { togglePause(false); restart(); };
 $('btn-mainmenu').onclick = () => toMenu();
+$('btn-settings2').addEventListener('click', () => togglePause(false));
 $('btn-newdest').onclick = () => { togglePause(false); newDestinationHere(); };
 $('btn-menu').onclick = () => togglePause();
+$('btn-cam').onclick = () => dispatchKey('KeyC');
 $('btn-sound').onclick = () => { audio.setMuted(!audio.muted); $('btn-sound').textContent = audio.muted ? '🔇' : '🔊'; };
 
 // ---------------- Entrada ----------------
@@ -584,6 +617,7 @@ function readInput(dt) {
   }
   inp.gun = !!k('Space') || mouse.l; inp.rocket = !!k('KeyZ') || mouse.r;
   inp.brake = !!k('KeyB'); inp.speedbrake = inp.brake;
+  inp.assist = settings.assist;
   const thrUp = k('KeyR', 'PageUp', 'ShiftLeft', 'ShiftRight', 'Equal', 'NumpadAdd');
   const thrDn = k('KeyF', 'PageDown', 'ControlLeft', 'ControlRight', 'Minus', 'NumpadSubtract');
   const tRate = spec.type === 'heli' ? 0.7 : 0.5;
@@ -665,32 +699,35 @@ function computeInstState() {
   inst.aoa = fm.aoa * RAD; inst.beta = fm.beta * RAD; inst.mach = fm.vel.length() / 340;
   inst.onGround = fm.onGround; inst.stall = fm.stall; inst.ab = fm.ab; inst.brakes = fm.brakes;
   inst.vsKt = (spec.vs || 20) * kt; inst.vmaxKt = spec.vmax * kt;
+  const pl = state.mission?.combat ? combat.player : null;
+  inst.armed = !!pl && !!spec.arms;
+  inst.ammo = pl?.ammo ?? 0; inst.rockets = pl?.rockets ?? 0; inst.hp = pl ? pl.hp / pl.maxHp : 1;
+  inst.heli = spec.type === 'heli';
   return inst;
 }
 
-// ---------------- HUD ----------------
+// ---------------- HUD (barra compacta de la vista exterior) ----------------
 const hud = {
-  spd: $('h-spd'), alt: $('h-alt'), vs: $('h-vs'), agl: $('h-agl'), g: $('h-g'), dest: $('h-dest'), dist: $('h-dist'), brg: $('h-brg'), eta: $('h-eta'),
-  thr: $('h-thr'), rpm: $('h-rpm'), thrv: $('h-thr-v'), flaps: $('h-flaps'), arrow: $('h-arrow'), warn: $('warn'),
-  compass: $('compass-canvas').getContext('2d'), mini: $('minimap').getContext('2d'),
+  spd: $('h-spd'), alt: $('h-alt'), hdg: $('h-hdg'), dest: $('h-dest'), dist: $('h-dist'),
+  thr: $('h-thr'), rpm: $('h-rpm'), thrv: $('h-thr-v'), arrow: $('h-arrow'), warn: $('warn'),
+  mini: $('minimap').getContext('2d'),
 };
 let hudT = 0, miniT = 0;
 function updateHUD(dt) {
   hudT -= dt; miniT -= dt;
-  const show = settings.hud && !(settings.hudCockpit && state.cam === 'cockpit');
-  $('hud-left').style.display = $('hud-right').style.display = $('compass').style.display = show ? '' : 'none';
   if (hudT > 0) return;
   hudT = 0.05;
-  const s = inst, fm = state.fm, met = settings.units === 'metric';
-  hud.spd.textContent = Math.round(met ? fm.ias * 3.6 : s.ias);
-  hud.alt.textContent = Math.round(met ? fm.pos.y : s.alt);
-  hud.vs.textContent = Math.round(met ? fm.vel.y : s.vs / 10) * (met ? 1 : 10);
-  const agl = fm.pos.y - state.spec.gearH - Math.max(0, state.world.groundHeight(fm.pos.x, fm.pos.z));
-  hud.agl.textContent = Math.max(0, Math.round(met ? agl : agl * 3.28084));
-  hud.g.textContent = s.g.toFixed(1);
-  $('u-spd').textContent = met ? 'km/h' : 'kt'; $('u-alt').textContent = met ? 'm' : 'ft'; $('u-vs').textContent = met ? 'm/s' : 'fpm'; $('u-agl').textContent = met ? 'm' : 'ft';
-  const nav = navTarget();
-  hud.dest.textContent = `${nav.icao} · ${nav.name}`;
+  const s = inst, fm = state.fm, spec = state.spec, met = settings.units === 'metric';
+  const agl = fm.pos.y - spec.gearH - Math.max(0, state.world.groundHeight(fm.pos.x, fm.pos.z));
+  // avisos (siempre visibles, también en cabina)
+  let warn = '';
+  if (fm.crashed) warn = '';
+  else if (fm.stall) warn = 'PÉRDIDA';
+  else if (!fm.onGround && agl < 150 && fm.vel.y < -8 && spec.type !== 'heli') warn = 'PULL UP';
+  else if (!fm.onGround && !spec.gearFixed && spec.type !== 'heli' && fm.gear < 0.99 && agl < 120 && fm.throttle < 0.4) warn = 'TREN';
+  else if (inst.lowFuel) warn = 'COMBUSTIBLE';
+  hud.warn.textContent = warn;
+  state.warn = warn;
   if (state.mission) {
     $('hud-mission').innerHTML = state.mission.panel();
     const pl = combat.player;
@@ -702,55 +739,24 @@ function updateHUD(dt) {
       $('h-score').textContent = combat.score;
     }
   }
+  // el minimapa también alimenta la pantalla de mapa de la cabina
+  if (miniT <= 0) { miniT = 0.5; drawMinimap(); }
+  if (state.cam === 'cockpit' || !settings.hud) return;
+  hud.spd.textContent = Math.round(met ? fm.ias * 3.6 : s.ias);
+  hud.alt.textContent = Math.round(met ? fm.pos.y : s.alt);
+  hud.hdg.textContent = String(Math.round(s.hdg) % 360).padStart(3, '0');
+  $('u-spd').textContent = met ? 'km/h' : 'kt'; $('u-alt').textContent = met ? 'm' : 'ft';
+  hud.dest.textContent = navTarget().icao;
   hud.dist.textContent = s.destDist.toFixed(1);
-  hud.brg.textContent = String(Math.round(s.destBrg)).padStart(3, '0');
-  const gsms = Math.hypot(fm.vel.x, fm.vel.z);
-  if (gsms > 5) { const t = s.destDist * 1000 / gsms; hud.eta.textContent = `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`; } else hud.eta.textContent = '--:--';
   hud.arrow.style.transform = `rotate(${s.destBrg - s.hdg - 90}deg)`;
   hud.thr.style.width = `${fm.throttle * 100}%`;
   hud.rpm.style.left = `${fm.rpm * 100}%`;
   hud.thrv.textContent = `${Math.round(fm.throttle * 100)}%`;
-  hud.flaps.textContent = `${Math.round(fm.flaps * 100)}%`;
   const setInd = (id, on, cls = 'on') => { const el = $(id); el.classList.remove('on', 'transit', 'hot'); if (on) el.classList.add(cls); };
   setInd('i-gear', fm.gear > 0.01, fm.gear > 0.99 ? 'on' : 'transit');
   setInd('i-flaps', fm.flaps > 0, 'transit');
   setInd('i-brake', fm.brakes || state.input.brake, 'transit');
   setInd('i-ab', fm.ab, 'hot');
-  setInd('i-lights', state.lights);
-  // avisos
-  let warn = '';
-  const spec = state.spec;
-  if (fm.crashed) warn = '';
-  else if (fm.stall) warn = 'PÉRDIDA';
-  else if (!fm.onGround && agl < 150 && fm.vel.y < -8 && spec.type !== 'heli') warn = 'PULL UP';
-  else if (!fm.onGround && !spec.gearFixed && spec.type !== 'heli' && fm.gear < 0.99 && agl < 120 && fm.throttle < 0.4) warn = 'TREN';
-  else if (inst.lowFuel) warn = 'COMBUSTIBLE';
-  hud.warn.textContent = warn;
-  state.warn = warn;
-  drawCompass(s.hdg, s.destBrg);
-  if (miniT <= 0) { miniT = 0.5; drawMinimap(); }
-}
-
-function drawCompass(hdg, dest) {
-  const g = hud.compass, W = 520, H = 44;
-  g.clearRect(0, 0, W, H);
-  g.fillStyle = 'rgba(12,18,26,0.55)'; g.fillRect(0, 0, W, H);
-  g.strokeStyle = 'rgba(230,240,248,0.85)'; g.fillStyle = '#e6f0f8'; g.textAlign = 'center'; g.font = '600 15px Rajdhani, sans-serif';
-  const ppd = W / 90;
-  for (let a = Math.floor(hdg - 50); a <= hdg + 50; a++) {
-    if (a % 5) continue;
-    const x = W / 2 + (a - hdg) * ppd;
-    const n = ((a % 360) + 360) % 360;
-    g.lineWidth = n % 10 === 0 ? 2 : 1;
-    g.beginPath(); g.moveTo(x, H); g.lineTo(x, H - (n % 10 === 0 ? 12 : 6)); g.stroke();
-    if (n % 30 === 0) g.fillText({ 0: 'N', 90: 'E', 180: 'S', 270: 'O' }[n] ?? String(n / 10), x, 18);
-  }
-  const rel = ((dest - hdg + 540) % 360) - 180;
-  const dx = W / 2 + clamp(rel, -44, 44) * ppd;
-  g.fillStyle = '#ffb648'; g.beginPath(); g.moveTo(dx, H - 14); g.lineTo(dx - 6, H - 24); g.lineTo(dx + 6, H - 24); g.fill();
-  g.fillStyle = '#5fd3ff'; g.fillRect(W / 2 - 1, 22, 2, 22);
-  g.font = '600 13px "Share Tech Mono", monospace'; g.fillStyle = '#5fd3ff';
-  g.fillText(String(Math.round(hdg) % 360).padStart(3, '0'), W / 2, 36 - 22 + 22 - 2 > 0 ? 34 : 34);
 }
 
 function drawMinimap() {
@@ -900,6 +906,7 @@ function loop() {
       menuCam.position.set(-d * 0.62, d * 0.22 + 1, d * 0.62);
       menuCam.lookAt(-menuModel.size * 0.2, menuModel.gearHeight * 0.7 + 0.5, 0);
     }
+    setEnvIntensity(1);
     fx.render(menuScene, menuCam);
     return;
   }
@@ -939,15 +946,17 @@ function loop() {
     checkArrival();
     // ayuda: baja el tren automáticamente en aproximación
     const sp = state.spec;
-    if (!state.mission?.combat && !fm.gearDown && !fm.crashed && !fm.onGround && sp.type === 'plane' && !sp.gearFixed && fm.vel.y < -0.5 && fm.ias < sp.vs * 1.7) {
+    const retract = sp.type === 'plane' ? !sp.gearFixed : !!sp.gearRetract;
+    if (!fm.gearDown && !fm.crashed && !fm.onGround && retract && fm.vel.y < -0.5 && fm.ias < (sp.type === 'heli' ? 20 : sp.vs * 1.7)) {
       const agl = fm.pos.y - sp.gearH - Math.max(0, state.world.groundHeight(fm.pos.x, fm.pos.z));
-      if (agl < 90) { fm.gearDown = true; audio.gearMotor(); toast('Tren bajado automáticamente'); }
+      if (agl < (sp.type === 'heli' ? 25 : 90)) { fm.gearDown = true; audio.gearMotor(); toast('Tren bajado automáticamente'); }
     }
     if (fm.crashed) {
       const e = fm.euler;
       fm.quat.setFromEuler(new THREE.Euler(lerp(e.x, -0.1, dt), e.y, lerp(e.z, 0.5, dt), 'YXZ'));
     }
   }
+  setEnvIntensity(0.25 + 0.75 * (1 - env.night));
   animateModel(dt);
   updateCamera(dt);
   const camWorld = camera.getWorldPosition(_v1);
@@ -968,7 +977,8 @@ function loop() {
   const m = state.mission;
   if (m) {
     const pl = m.combat ? combat.player : null;
-    tacHud.draw(camera, { fm, markers: m.markers(), armed: !!pl && !!state.spec.arms, hitFlash: pl?.hitFlash || 0, ammoEmpty: !!pl && pl.ammo <= 0 });
+    // en cabina la retícula la pone el HUD del avión: aquí solo marcadores
+    tacHud.draw(camera, { fm, markers: m.markers(), armed: !!pl && !!state.spec.arms && state.cam !== 'cockpit', hitFlash: pl?.hitFlash || 0, ammoEmpty: !!pl && pl.ammo <= 0 });
   }
 }
 

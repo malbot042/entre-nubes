@@ -1,11 +1,11 @@
 // Modelo de vuelo simplificado pero creíble para aviones y helicópteros.
 import * as THREE from 'three';
-import { clamp, lerp, smoothstep, DEG } from './util.js?v=5';
+import { clamp, lerp, smoothstep, DEG } from './util.js?v=7';
 
 const G = 9.81;
 const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _q = new THREE.Quaternion(), _qi = new THREE.Quaternion();
 const _e = new THREE.Euler(0, 0, 0, 'YXZ');
-const _t = new THREE.Vector3();
+const _t = new THREE.Vector3(), _t2 = new THREE.Vector3();
 
 export class FlightModel {
   constructor(spec) {
@@ -36,7 +36,7 @@ export class FlightModel {
       this.aStall = 15 * DEG;
       this.clMax = (2 * m * G) / (1.225 * spec.vs * spec.vs * S);
       this.clA = this.clMax / this.aStall;
-      this.k = spec.cat === 'fighter' ? 0.09 : 0.055;
+      this.k = spec.id === 'a10' ? 0.06 : 0.09;
       this.T0 = spec.tw * m * G;
       const qv = 0.5 * 1.225 * spec.vmax * spec.vmax;
       const clv = (m * G) / (qv * S);
@@ -110,7 +110,7 @@ export class FlightModel {
       const mach = V / 340;
       let cd = this.cd0 + this.k * cl * cl + this.gear * this.cd0 * (s.gearFixed ? 0 : 0.6) + this.flaps * 0.05 + (this.stall ? 0.08 : 0);
       if (input.speedbrake && !this.onGround) cd += 0.06;
-      cd += (s.cat === 'fighter' ? 0.025 : 0.12) * smoothstep(0.85, 1.05, mach);
+      cd += (s.id === 'a10' ? 0.12 : 0.025) * smoothstep(0.85, 1.05, mach);
       if (V > 0.5) {
         const dx = vb.x / V, dy = vb.y / V, dz = vb.z / V;
         // sustentación perpendicular al viento relativo, en el plano de simetría
@@ -131,11 +131,27 @@ export class FlightModel {
       const eff2 = eff * eff;
       // auto-compensación: el morro tiende al ángulo de ataque de vuelo nivelado
       const qS = qd * s.S * this.clA * (1 - this.sweep * 0.15);
-      const aTrim = qS > 1 ? clamp((s.mass * G * Math.cos(pitch)) / qS - this.flaps * 4 * DEG, -0.05, aS * 0.8) : 0;
+      // asistido: factor de carga del viraje para no perder altura al alabear
+      const assist = input.assist && !this.onGround && Math.abs(pitch) < 60 * DEG;
+      const nTurn = assist ? 1 / Math.max(Math.cos(roll), 0.22) : 1;
+      const aTrim = qS > 1 ? clamp((s.mass * G * Math.cos(pitch) * nTurn) / qS - this.flaps * 4 * DEG, -0.05, aS * 0.8) : 0;
       tgt.x = input.pitch * s.pitch * DEG * eff2 - (this.aoa - aTrim) * 0.5 * eff;
       tgt.z = -input.roll * s.roll * DEG * eff2;
+      if (assist) {
+        // las teclas fijan el ángulo de alabeo (hasta 75°) y al soltarlas las alas se nivelan
+        const bankT = -input.roll * 76 * DEG;
+        tgt.z = clamp((bankT - roll) * 3.5, -s.roll * DEG, s.roll * DEG) * Math.max(eff, 0.4);
+        // viraje coordinado: velocidades angulares de cuerpo de un giro nivelado
+        const phi = clamp(roll, -80 * DEG, 80 * DEG);
+        const turn = G * Math.tan(phi) / Math.max(V, 40);
+        tgt.x += Math.abs(turn * Math.sin(phi)) * eff;
+        tgt.y += turn * Math.cos(phi) * eff;
+        // protección de pérdida: limita el tirón cerca del ángulo de ataque crítico
+        const lim = aS * 0.82;
+        if (this.aoa > lim * 0.8) tgt.x = Math.min(tgt.x, (lim - this.aoa) * 4);
+      }
       // estabilidad lateral (efecto diedro), mayor en aviones civiles
-      tgt.z -= roll * (s.cat === 'fighter' ? 0.02 : s.cat === 'warbird' ? 0.05 : 0.12) * eff * (1 - Math.abs(input.roll));
+      if (!assist) tgt.z -= roll * 0.03 * eff * (1 - Math.abs(input.roll));
       tgt.y = -input.yaw * s.yaw * DEG * eff2 - this.beta * 1.6 * eff;
       if (this.stall) { tgt.x -= 0.35; tgt.z += Math.sin(performance.now() / 300) * 0.5; }
       if (this.onGround) {
@@ -167,7 +183,8 @@ export class FlightModel {
       const ax = this.vel.x - env.wind.x, ay = this.vel.y - env.wind.y, az = this.vel.z - env.wind.z;
       const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
       const af = ax * fx + az * fz, ar = ax * rx + az * rz;
-      const Ff = -this.cz * af * Math.abs(af), Fr = -this.cx * ar * Math.abs(ar);
+      // asistido: la velocidad lateral se amortigua rápido para que la trayectoria siga al morro
+      const Ff = -this.cz * af * Math.abs(af), Fr = input.assist ? -s.mass * 2.2 * ar : -this.cx * ar * Math.abs(ar);
       this.heliDrag = this.heliDrag || new THREE.Vector3();
       this.heliDrag.set(fx * Ff + rx * Fr, -this.cy * ay * Math.abs(ay) - s.mass * 0.6 * ay, fz * Ff + rz * Fr);
       this.liftRatio = L / (s.mass * G);
@@ -175,13 +192,21 @@ export class FlightModel {
       this.aoa = 0; this.beta = V > 3 ? Math.atan2(vb.x, Math.max(-vb.z, 1)) : 0;
       this.stall = false;
       const tp = input.pitch * s.maxPitch * DEG;
-      const tr = -input.roll * s.maxBank * DEG;
+      // asistido: poca inclinación en estacionario (A/D giran el morro) y más a velocidad
+      const spd = smoothstep(4, 30, hspd);
+      const tr = -input.roll * s.maxBank * DEG * (input.assist ? 0.3 + 0.7 * spd : 1);
       tgt.x = clamp((tp - pitch) * 5, -2.2, 2.2);
       tgt.z = clamp((tr - roll) * 5.5, -2.8, 2.8);
       const fwd = -vb.z;
-      tgt.y = -input.yaw * s.yaw * 1.5 * DEG - this.beta * 1.5 * smoothstep(10, 25, fwd);
+      tgt.y = -input.yaw * s.yaw * 1.5 * DEG;
+      if (input.assist) {
+        // giro de rumbo alrededor de la vertical del suelo, pasado a ejes del fuselaje
+        const wy = -input.roll * s.yaw * DEG * (0.55 - 0.25 * spd);
+        _t2.set(0, wy, 0).applyQuaternion(_qi);
+        tgt.add(_t2);
+      } else tgt.y -= this.beta * 1.5 * smoothstep(10, 25, fwd);
       // viraje coordinado automático
-      if (fwd > 8) tgt.y += Math.tan(roll) * G / Math.max(fwd, 8) * Math.cos(roll);
+      if (fwd > 8 && !input.assist) tgt.y += Math.tan(roll) * G / Math.max(fwd, 8) * Math.cos(roll);
       if (this.onGround) { tgt.x = clamp(tgt.x, -0.3, 0.3); tgt.z = clamp(tgt.z, -0.3, 0.3); if (this.throttle < 0.45) tgt.y *= 0.3; }
       if (env.w.turb > 0) {
         const t = performance.now() / 1000;
@@ -230,7 +255,7 @@ export class FlightModel {
     if (!down) {
       if (gs > 8 || impact > 2) return crash('Aterrizaje de panza: el tren no estaba bajado.');
     }
-    const maxVs = this.isHeli ? 7 : s.cat === 'fighter' || s.id === 'b737' ? 9 : 8;
+    const maxVs = this.isHeli ? 7 : 9;
     if (impact > maxVs) return crash(`Impacto demasiado fuerte (${(impact * 196.85).toFixed(0)} ft/min).`);
     if (Math.abs(roll) > (this.isHeli ? 40 : 35) * DEG) return crash('Ala contra el suelo: alabeo excesivo al contactar.');
     if (pitch < -20 * DEG) return crash('El morro ha golpeado el terreno.');
