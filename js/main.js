@@ -1,13 +1,13 @@
 // Entre Nubes — bucle principal, cámaras, entrada, HUD y menús.
 import * as THREE from 'three';
-import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js';
-import { buildModel } from './models.js';
-import { Cockpit } from './cockpit.js';
-import { FlightModel } from './physics.js';
-import { World, CHUNK } from './world.js';
-import { Environment, WEATHER } from './environment.js';
-import { AudioEngine } from './audio.js';
-import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js';
+import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=4';
+import { buildModel } from './models.js?v=4';
+import { Cockpit } from './cockpit.js?v=4';
+import { FlightModel } from './physics.js?v=4';
+import { World, CHUNK } from './world.js?v=4';
+import { Environment, WEATHER } from './environment.js?v=4';
+import { AudioEngine } from './audio.js?v=4';
+import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=4';
 
 // ---------------- Ajustes persistentes ----------------
 const DEFAULTS = { aircraft: 'c172', time: '13', weather: 'clear', dist: 'medium', start: 'runway', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, hud: true, hudCockpit: false, fuel: true, mouse: 1, fov: 72 };
