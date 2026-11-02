@@ -1,8 +1,8 @@
 // Cielo, sol/luna, estrellas, iluminación, niebla, nubes, lluvia/nieve y rayos.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { clamp, lerp, smoothstep, mulberry32 } from './util.js?v=4';
-import { sharedUniforms } from './world.js?v=4';
+import { clamp, lerp, smoothstep, mulberry32 } from './util.js?v=5';
+import { sharedUniforms } from './world.js?v=5';
 
 export const WEATHER = {
   clear: { name: 'Despejado', clouds: 25, cloudBase: 1800, overcast: 0, fog: 28000, rain: 0, snow: 0, wind: 3, gust: 0.5, turb: 0, dark: 0, lightning: false },
@@ -105,18 +105,19 @@ export class Environment {
     // Luces
     this.sun = new THREE.DirectionalLight(0xffffff, 3);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(1536, 1536);
+    this.sun.shadow.mapSize.set(2048, 2048);
     const sc2 = this.sun.shadow.camera;
-    sc2.left = -45; sc2.right = 45; sc2.top = 45; sc2.bottom = -45; sc2.near = 1; sc2.far = 800;
+    sc2.left = -130; sc2.right = 130; sc2.top = 130; sc2.bottom = -130; sc2.near = 1; sc2.far = 800;
     this.sun.shadow.bias = -0.0004;
-    this.sun.shadow.normalBias = 0.05;
+    this.sun.shadow.normalBias = 0.12;
     scene.add(this.sun); scene.add(this.sun.target);
-    this.hemi = new THREE.HemisphereLight(0xbfd8ff, 0x4a5a3a, 1.0);
+    this.hemi = new THREE.HemisphereLight(0x8fe0e6, 0x6a3a78, 1.0);
     scene.add(this.hemi);
     this.ambient = new THREE.AmbientLight(0xffffff, 0.15);
     scene.add(this.ambient);
 
-    scene.fog = new THREE.Fog(0xb0c4d8, 100, 25000);
+    scene.fog = new THREE.FogExp2(0xb0c4d8, 0.00008);
+    this.viewLimit = 9000; // alcance de la malla de terreno: la niebla debe cerrar antes
 
     // Nubes
     this.cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x222222, flatShading: true });
@@ -190,23 +191,20 @@ export class Environment {
   computeSky() {
     // Posición solar simple: amanecer 6h, ocaso 20h
     const t = (this.hour - 6) / 14;
-    const elev = Math.sin(t * Math.PI) * 62 * Math.PI / 180;
-    const az = Math.PI * (0.25 + t * 1.0);
+    const nightPart = this.hour < 6 || this.hour > 20;
+    const elev = nightPart ? -Math.sin(((this.hour + 24 - 20) % 24) / 10 * Math.PI) * 40 * Math.PI / 180 : Math.sin(t * Math.PI) * 62 * Math.PI / 180;
+    // acimut continuo en las 24 h: el ciclo día/noche no da saltos a medianoche
+    const az = Math.PI * 0.25 + (((this.hour - 6 + 24) % 24) / 24) * Math.PI * 2;
     this.sunDir.set(Math.cos(az) * Math.cos(elev), Math.sin(elev), Math.sin(az) * Math.cos(elev)).normalize();
-    if (this.hour < 6 || this.hour > 20) {
-      const nt = ((this.hour + 24 - 20) % 24) / 10;
-      const e2 = -Math.sin(nt * Math.PI) * 40 * Math.PI / 180;
-      this.sunDir.set(Math.cos(az), Math.sin(e2), Math.sin(az)).normalize();
-    }
     const se = this.sunDir.y;
     const day = smoothstep(-0.12, 0.25, se);
     const golden = smoothstep(0.35, 0.02, se) * smoothstep(-0.15, 0.02, se);
     this.night = 1 - smoothstep(-0.2, 0.05, se);
     const oc = this.w.overcast * 0.8 + this.w.dark * 0.4;
-    const top = new THREE.Color().setRGB(lerp(0.01, 0.16, day), lerp(0.015, 0.36, day), lerp(0.05, 0.75, day));
-    const hor = new THREE.Color().setRGB(lerp(0.03, 0.66, day), lerp(0.04, 0.78, day), lerp(0.08, 0.92, day));
-    hor.lerp(new THREE.Color(1.0, 0.55, 0.3), golden * 0.75);
-    top.lerp(new THREE.Color(0.25, 0.3, 0.55), golden * 0.3);
+    const top = new THREE.Color().setRGB(lerp(0.012, 0.015, day), lerp(0.012, 0.13, day), lerp(0.07, 0.72, day));
+    const hor = new THREE.Color().setRGB(lerp(0.035, 0.3, day), lerp(0.03, 0.68, day), lerp(0.1, 0.98, day));
+    hor.lerp(new THREE.Color(1.0, 0.36, 0.16), golden * 0.85);
+    top.lerp(new THREE.Color(0.3, 0.1, 0.5), golden * 0.55);
     const grey = new THREE.Color().setRGB(lerp(0.03, 0.55, day), lerp(0.035, 0.57, day), lerp(0.045, 0.6, day));
     top.lerp(grey.clone().multiplyScalar(0.85), clamp(oc, 0, 1));
     hor.lerp(grey, clamp(oc, 0, 1));
@@ -265,8 +263,8 @@ export class Environment {
       this.sun.position.copy(focusPos).addScaledVector(this.skyU.uMoonDir.value, 400);
     }
     this.sun.target.position.copy(focusPos);
-    this.hemi.color.copy(top).lerp(new THREE.Color(1, 1, 1), 0.3);
-    this.hemi.groundColor.setRGB(0.25, 0.27, 0.2);
+    this.hemi.color.copy(top).lerp(new THREE.Color(0.55, 0.95, 0.9), 0.45);
+    this.hemi.groundColor.setRGB(0.36, 0.2, 0.42);
     this.hemi.intensity = lerp(0.12, 1.15, day) * (1 - ocL * 0.25) + this.flash * 4;
     this.ambient.intensity = lerp(0.12, 0.2, day) + this.night * 0.08;
     sharedUniforms.uNight.value = this.night;
@@ -275,8 +273,7 @@ export class Environment {
     const fogFar = this.w.fog * (above ? 3 : 1);
     this.scene.fog.color.copy(hor).lerp(new THREE.Color(0.5, 0.52, 0.55).multiplyScalar(lerp(0.08, 1, day)), clamp(this.w.overcast * 0.5 + (1 - fogFar / 28000) * 0.4, 0, 1));
     if (this.flash > 0) this.scene.fog.color.lerp(new THREE.Color(0.8, 0.85, 1), this.flash * 0.5);
-    this.scene.fog.near = Math.min(400, fogFar * 0.05);
-    this.scene.fog.far = fogFar;
+    this.scene.fog.density = 1.45 / Math.min(fogFar, this.viewLimit * (above ? 2.5 : 1));
     this.skyU.uHorizon.value.lerp(this.scene.fog.color, 0.6);
 
     // nubes

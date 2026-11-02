@@ -2,8 +2,8 @@
 // ciudades, pueblos, granjas, bosques, aerogeneradores y aeropuertos.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Noise2D, mulberry32, hash2, clamp, lerp, smoothstep, randomPlaceName, randomICAO } from './util.js?v=4';
-import { buildModel } from './models.js?v=4';
+import { Noise2D, mulberry32, hash2, clamp, lerp, smoothstep, randomPlaceName, randomICAO } from './util.js?v=5';
+import { buildModel } from './models.js?v=5';
 
 export const CHUNK = 1000;
 const CITY_CELL = 6000;
@@ -21,7 +21,7 @@ float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
 `;
 
 function makeTerrainMaterial() {
-  const m = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.92, metalness: 0 });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uNight = sharedUniforms.uNight;
     sh.vertexShader = sh.vertexShader
@@ -84,7 +84,7 @@ ${GLSL_HASH}`)
 }
 
 function makeBuildingMaterial() {
-  const m = new THREE.MeshLambertMaterial();
+  const m = new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.75, metalness: 0.05 });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uNight = sharedUniforms.uNight;
     sh.vertexShader = sh.vertexShader
@@ -132,6 +132,8 @@ function waterNormalTexture() {
   }
   const t = new THREE.DataTexture(data, S, S);
   t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping;
+  // mipmaps: sin ellos el agua lejana centellea como ruido
+  t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = 8;
   t.needsUpdate = true;
   return t;
 }
@@ -228,6 +230,7 @@ export class World {
     this.nBiome = new Noise2D(seed + 5);
     this.nForest = new Noise2D(seed + 6);
     this.airports = [];
+    this.focus = null; // zona de misión: malla de máxima resolución para que los objetivos no se hundan
     this.forcedCities = [];
     this.cityCache = new Map();
     this.chunks = new Map();
@@ -238,16 +241,16 @@ export class World {
 
     this.terrainMat = makeTerrainMaterial();
     this.buildingMat = makeBuildingMaterial();
-    this.propMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-    this.lightMat = new THREE.PointsMaterial({ color: 0xffc070, size: 2.6, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false });
-    this.redLightMat = new THREE.PointsMaterial({ color: 0xff2a1a, size: 3.5, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false });
+    this.propMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85, metalness: 0 });
+    this.lightMat = new THREE.PointsMaterial({ color: new THREE.Color(0xffc070).multiplyScalar(2.6), size: 2.6, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false });
+    this.redLightMat = new THREE.PointsMaterial({ color: new THREE.Color(0xff2a1a).multiplyScalar(3), size: 3.5, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false });
     this.G = buildPropGeometries();
     this.rotors = new Set();
 
     // Agua
     this.waterTex = waterNormalTexture();
     this.waterTex.repeat.set(1200, 1200);
-    this.waterMat = new THREE.MeshPhongMaterial({ color: 0x1d4f6b, specular: 0x9fb8c8, shininess: 90, normalMap: this.waterTex, normalScale: new THREE.Vector2(0.35, 0.35) });
+    this.waterMat = new THREE.MeshPhongMaterial({ color: 0x0f6f96, specular: 0x9fb8c8, shininess: 90, normalMap: this.waterTex, normalScale: new THREE.Vector2(0.35, 0.35) });
     this.water = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000).rotateX(-Math.PI / 2), this.waterMat);
     this.water.receiveShadow = true;
     scene.add(this.water);
@@ -581,7 +584,7 @@ export class World {
     const lg = new THREE.BufferGeometry();
     lg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     lg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    const lpm = new THREE.PointsMaterial({ size: 3, sizeAttenuation: false, vertexColors: true, transparent: true, depthWrite: false });
+    const lpm = new THREE.PointsMaterial({ color: new THREE.Color(2.4, 2.4, 2.4), size: 3, sizeAttenuation: false, vertexColors: true, transparent: true, depthWrite: false });
     const pts = new THREE.Points(lg, lpm);
     pts.frustumCulled = false;
     grp.add(pts);
@@ -706,7 +709,15 @@ export class World {
     r = lerp(r, 0.72, sand); g = lerp(g, 0.66, sand); b = lerp(b, 0.48, sand);
     if (h < 0) { const d = clamp(-h / 30, 0, 1); r = lerp(r, 0.25, d); g = lerp(g, 0.3, d); b = lerp(b, 0.25, d); }
     r = lerp(r, 0.36, apw * 0.7); g = lerp(g, 0.5, apw * 0.7); b = lerp(b, 0.22, apw * 0.7);
-    out[0] = r; out[1] = g; out[2] = b;
+    // gradiente por altitud y saturación moderna: valles esmeralda, laderas cálidas, cumbres malva
+    const veg = (1 - rock) * (1 - snow) * (1 - sand) * (1 - city);
+    const low = 1 - smoothstep(40, 320, h), mid = smoothstep(180, 520, h) * (1 - smoothstep(560, 900, h));
+    r = lerp(r, r * 0.72, veg * low); g = lerp(g, g * 1.28 + 0.03, veg * low); b = lerp(b, b * 1.05 + 0.03, veg * low);
+    r = lerp(r, r * 1.3 + 0.07, veg * mid); g = lerp(g, g * 1.04, veg * mid); b = lerp(b, b * 0.72, veg * mid);
+    const hi = smoothstep(620, 1050, h) * rock * (1 - snow);
+    r = lerp(r, 0.5, hi); g = lerp(g, 0.34, hi); b = lerp(b, 0.5, hi);
+    const lum = 0.3 * r + 0.59 * g + 0.11 * b, sat = 1.34;
+    out[0] = clamp(lum + (r - lum) * sat, 0, 1); out[1] = clamp(lum + (g - lum) * sat, 0, 1); out[2] = clamp(lum + (b - lum) * sat, 0, 1);
     const field = smoothstep(-0.05, 0.15, this.nBiome.noise(x / 3500 + 50, z / 3500)) * (1 - fw) * (1 - rock) *
       (1 - smoothstep(250, 450, h)) * (1 - sand) * (1 - city) * (1 - apw);
     return { field, city };
@@ -948,7 +959,7 @@ export class World {
       const cx = ccx + dx, cz = ccz + dz;
       const d = Math.hypot(cx + 0.5 - fx, cz + 0.5 - fz);
       if (d > R + 0.5) continue;
-      const res = this.lodFor(d);
+      const res = this.focus && Math.hypot(cx + 0.5 - this.focus.x / CHUNK, cz + 0.5 - this.focus.z / CHUNK) < this.focus.r / CHUNK ? 24 : this.lodFor(d);
       const key = cx + ',' + cz;
       const ex = this.chunks.get(key);
       if (!ex || ex.res !== res) jobs.push({ cx, cz, res, d, key, ex, kind: 't' });

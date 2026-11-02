@@ -200,5 +200,9 @@ export class AudioEngine {
     this.burst({ dur: 3, freq: 200, type: 'lowpass', q: 0.5, gain: 2.5, buf: this.brown, attack: 0.01, decay: 3 });
     this.burst({ dur: 1, freq: 900, type: 'bandpass', q: 0.4, gain: 0.8, attack: 0.005, decay: 1.2 });
   }
+  gun() { if (this.ctx) this.burst({ dur: 0.07, freq: 420, q: 0.7, gain: 0.28, decay: 0.07 }); }
+  rocket() { if (this.ctx) this.burst({ dur: 0.8, freq: 900, q: 0.5, gain: 0.3, decay: 0.75 }); }
+  hit() { if (this.ctx) this.burst({ dur: 0.12, freq: 1800, q: 1.5, gain: 0.3, decay: 0.1 }); }
+  ring(i = 0) { if (this.ctx) this.tone(620 + i * 28, 0.28, 0.09, 'triangle', 980 + i * 28); }
   chime() { this.tone(880, 0.6, 0.08); setTimeout(() => this.tone(1320, 0.9, 0.08), 180); }
 }

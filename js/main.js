@@ -1,16 +1,21 @@
 // Entre Nubes — bucle principal, cámaras, entrada, HUD y menús.
 import * as THREE from 'three';
-import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=4';
-import { buildModel } from './models.js?v=4';
-import { Cockpit } from './cockpit.js?v=4';
-import { FlightModel } from './physics.js?v=4';
-import { World, CHUNK } from './world.js?v=4';
-import { Environment, WEATHER } from './environment.js?v=4';
-import { AudioEngine } from './audio.js?v=4';
-import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=4';
+import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=5';
+import { buildModel } from './models.js?v=5';
+import { Cockpit } from './cockpit.js?v=5';
+import { FlightModel } from './physics.js?v=5';
+import { World, CHUNK } from './world.js?v=5';
+import { Environment, WEATHER } from './environment.js?v=5';
+import { AudioEngine } from './audio.js?v=5';
+import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=5';
+import { PostFX } from './postfx.js?v=5';
+import { Particles } from './effects.js?v=5';
+import { Combat } from './combat.js?v=5';
+import { MODES, createMission, isCombat } from './missions.js?v=5';
+import { TacticalHUD } from './hud.js?v=5';
 
 // ---------------- Ajustes persistentes ----------------
-const DEFAULTS = { aircraft: 'c172', time: '13', weather: 'clear', dist: 'medium', start: 'runway', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, hud: true, hudCockpit: false, fuel: true, mouse: 1, fov: 72 };
+const DEFAULTS = { aircraft: 'c172', time: '13', weather: 'clear', dist: 'medium', start: 'runway', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, hud: true, hudCockpit: false, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, best: {} };
 let settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('entrenubes2') || '{}')); } catch (_) { }
 const save = () => { try { localStorage.setItem('entrenubes2', JSON.stringify(settings)); } catch (_) { } };
@@ -26,6 +31,9 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const applyPixelRatio = () => renderer.setPixelRatio({ low: 0.75, medium: Math.min(devicePixelRatio, 1.25), high: Math.min(devicePixelRatio, 2) }[settings.quality] || 1);
 applyPixelRatio();
 
+const fx = new PostFX(renderer);
+fx.setQuality(settings.quality);
+
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(settings.fov, innerWidth / innerHeight, 0.5, 45000);
 scene.add(camera);
@@ -36,27 +44,35 @@ env.onThunder = () => audio.thunder();
 // la cabina se dibuja en una segunda pasada (capa 1) con su propio plano cercano
 for (const l of [env.sun, env.hemi, env.ambient]) l.layers.enable(1);
 env.sun.shadow.camera.layers.enableAll();
+const particles = new Particles(scene);
+const combat = new Combat(scene, particles, audio);
+const tacHud = new TacticalHUD(document.getElementById('hud-canvas'));
 
 // Escena del hangar (menú)
 const menuScene = new THREE.Scene();
 const menuCam = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 2000);
 {
-  const cv = document.createElement('canvas'); cv.width = 2; cv.height = 256;
-  const g = cv.getContext('2d');
-  const gr = g.createLinearGradient(0, 0, 0, 256);
-  gr.addColorStop(0, '#3a6fa8'); gr.addColorStop(0.55, '#a9c9e4'); gr.addColorStop(0.62, '#e8d9b8'); gr.addColorStop(1, '#5d6b45');
-  g.fillStyle = gr; g.fillRect(0, 0, 2, 256);
-  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
-  menuScene.background = t;
-  menuScene.add(new THREE.HemisphereLight(0xcfe4ff, 0x56603e, 1.4));
-  const d = new THREE.DirectionalLight(0xfff2e0, 2.6); d.position.set(30, 50, 20); d.castShadow = true;
+  // cúpula de cielo: el horizonte coincide con el color de la niebla del suelo
+  menuScene.add(new THREE.Mesh(new THREE.SphereGeometry(900, 24, 12), new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, fog: false,
+    vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+    fragmentShader: `varying vec3 vP;
+      void main(){
+        float h = max(normalize(vP).y, 0.0);
+        vec3 c = mix(vec3(1.0,0.46,0.3), vec3(0.2,0.42,0.95), smoothstep(0.0,0.22,h));
+        c = mix(c, vec3(0.02,0.08,0.42), smoothstep(0.18,0.7,h));
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+  })));
+  menuScene.add(new THREE.HemisphereLight(0xa8f0f0, 0x7a4488, 2.2));
+  const d = new THREE.DirectionalLight(0xfff0dc, 3.4); d.position.set(-35, 45, 30); d.castShadow = true; d.shadow.normalBias = 0.06; d.shadow.bias = -0.0006;
   d.shadow.camera.left = d.shadow.camera.bottom = -25; d.shadow.camera.right = d.shadow.camera.top = 25; d.shadow.mapSize.set(2048, 2048);
   menuScene.add(d);
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(400, 48).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x6f7d55 }));
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(400, 12).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3f8f62, roughness: 0.95, flatShading: true }));
   ground.receiveShadow = true; menuScene.add(ground);
-  const pad = new THREE.Mesh(new THREE.CircleGeometry(28, 48).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x8f8f88 }));
+  const pad = new THREE.Mesh(new THREE.CircleGeometry(28, 10).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x4a4c5e, roughness: 0.8, flatShading: true }));
   pad.position.y = 0.02; pad.receiveShadow = true; menuScene.add(pad);
-  menuScene.fog = new THREE.Fog(0xa9c9e4, 120, 420);
+  menuScene.fog = new THREE.FogExp2(new THREE.Color(1.0, 0.46, 0.3), 0.0075);
 }
 let menuModel = null;
 
@@ -72,10 +88,10 @@ const state = {
   flybyPos: new THREE.Vector3(), flybyT: 0,
   lights: false, arrived: false, flightTime: 0, distFlown: 0, lastTouch: null,
   seed: 1, input: { pitch: 0, roll: 0, yaw: 0, brake: false, speedbrake: false },
-  gearWarned: false,
+  gearWarned: false, mission: null,
 };
 const eyePivot = new THREE.Group();
-window.__entreNubes = { state, scene, camera, env };
+window.__entreNubes = { state, scene, camera, env, combat, particles, fx };
 const keys = new Set();
 const defPitch = () => (state.spec?.type === 'heli' ? -14 : state.spec?.cat === 'fighter' ? -6 : -10) * DEG;
 
@@ -106,7 +122,31 @@ document.querySelectorAll('.window .win-head').forEach(h => {
 
 // ---------------- Menú ----------------
 let currentCat = AIRCRAFT_BY_ID[settings.aircraft]?.cat || 'light';
+const unarmedFor = (a, mode) => isCombat(mode) && !a.arms;
+function buildModes() {
+  const box = $('mode-tabs'); box.innerHTML = '';
+  for (const m of MODES) {
+    const b = document.createElement('button');
+    b.className = 'mode' + (m.id === settings.mode ? ' active' : '');
+    b.innerHTML = `<i>${m.icon}</i>${m.name}`;
+    b.onclick = () => {
+      settings.mode = m.id;
+      // los modos de combate exigen una aeronave armada
+      if (unarmedFor(AIRCRAFT_BY_ID[settings.aircraft], m.id)) {
+        settings.aircraft = m.id === 'cas' ? 'a10' : 'f14';
+        currentCat = AIRCRAFT_BY_ID[settings.aircraft].cat;
+        showPreview();
+      }
+      save(); buildMenu();
+    };
+    box.appendChild(b);
+  }
+  $('mode-desc').textContent = MODES.find(m => m.id === settings.mode)?.desc || '';
+  $('opt-dist-wrap').style.display = settings.mode === 'free' ? '' : 'none';
+  $('btn-fly').textContent = settings.mode === 'free' ? 'DESPEGAR ✈' : isCombat(settings.mode) ? 'A COMBATE ✈' : 'A LOS ANILLOS ✈';
+}
 function buildMenu() {
+  buildModes();
   const tabs = $('cat-tabs'); tabs.innerHTML = '';
   for (const c of CATEGORIES) {
     const b = document.createElement('button'); b.textContent = c.name; b.className = c.id === currentCat ? 'active' : '';
@@ -115,10 +155,11 @@ function buildMenu() {
   }
   const list = $('aircraft-list'); list.innerHTML = '';
   for (const a of AIRCRAFT.filter(a => a.cat === currentCat)) {
-    const d = document.createElement('div'); d.className = 'card' + (a.id === settings.aircraft ? ' active' : '');
+    const locked = unarmedFor(a, settings.mode);
+    const d = document.createElement('div'); d.className = 'card' + (a.id === settings.aircraft ? ' active' : '') + (locked ? ' locked' : '');
     const kmh = Math.round(a.vmax * 3.6);
-    d.innerHTML = `<div class="n">${a.name}</div><div class="s">${kmh} km/h · ${(a.mass / 1000).toFixed(1)} t</div>`;
-    d.onclick = () => { settings.aircraft = a.id; save(); buildMenu(); showPreview(); };
+    d.innerHTML = `<div class="n">${a.name}</div><div class="s">${locked ? 'Sin armamento' : `${kmh} km/h · ${(a.mass / 1000).toFixed(1)} t`}</div>`;
+    d.onclick = () => { if (locked) return; settings.aircraft = a.id; save(); buildMenu(); showPreview(); };
     list.appendChild(d);
   }
   const sp = AIRCRAFT_BY_ID[settings.aircraft];
@@ -150,7 +191,7 @@ $('btn-fly').addEventListener('click', () => { audio.init(); startFlight(); });
 // ---------------- Ajustes UI ----------------
 function bindSettings() {
   const q = $('set-quality'); q.value = settings.quality;
-  q.onchange = () => { settings.quality = q.value; save(); applyPixelRatio(); if (state.world) state.world.setQuality(q.value); };
+  q.onchange = () => { settings.quality = q.value; save(); applyPixelRatio(); fx.setQuality(q.value); fx.resize(innerWidth, innerHeight); env.viewLimit = viewLimit(); if (state.world) state.world.setQuality(q.value); };
   const sh = $('set-shadows'); sh.checked = settings.shadows;
   sh.onchange = () => { settings.shadows = sh.checked; save(); renderer.shadowMap.enabled = sh.checked; env.sun.castShadow = sh.checked; scene.traverse(o => { if (o.material) o.material.needsUpdate = true; }); };
   const v = $('set-volume'); v.value = settings.volume; v.oninput = () => { settings.volume = +v.value; save(); audio.setVolume(settings.volume); };
@@ -160,6 +201,8 @@ function bindSettings() {
   const hc = $('set-hud-cockpit'); hc.checked = settings.hudCockpit; hc.onchange = () => { settings.hudCockpit = hc.checked; save(); };
   const fu = $('set-fuel'); fu.checked = settings.fuel; fu.onchange = () => { settings.fuel = fu.checked; save(); if (state.fm) state.fm.infiniteFuel = fu.checked; };
   const ms = $('set-mouse'); ms.value = settings.mouse; ms.oninput = () => { settings.mouse = +ms.value; save(); };
+  const mf = $('set-mousefly'); mf.checked = settings.mouseFly; mf.onchange = () => { settings.mouseFly = mf.checked; save(); };
+  const tf = $('set-timeflow'); tf.checked = settings.timeflow; tf.onchange = () => { settings.timeflow = tf.checked; save(); };
   const fov = $('set-fov'); fov.value = settings.fov; fov.oninput = () => { settings.fov = +fov.value; save(); };
   // clima
   const wb = $('weather-buttons'); wb.innerHTML = '';
@@ -172,6 +215,8 @@ function bindSettings() {
   t.oninput = () => { env.setTime(+t.value); updateTimeLabel(); };
   refreshWeatherButtons();
 }
+const viewLimit = () => ({ low: 5, medium: 8, high: 11 }[settings.quality] || 8) * 1150;
+env.viewLimit = viewLimit();
 function refreshWeatherButtons() { document.querySelectorAll('#weather-buttons button').forEach(b => b.classList.toggle('active', b.dataset.k === env.weatherKey)); }
 function updateTimeLabel() {
   const h = env.hour; $('set-time').value = h.toFixed(1);
@@ -184,6 +229,7 @@ const DIST = { short: [8000, 15000], medium: [20000, 40000], long: [60000, 12000
 function setLoading(on, text) { $('loading').classList.toggle('hidden', !on); if (text) $('loading-text').textContent = text; }
 
 async function startFlight(keepWorld = false) {
+  document.activeElement?.blur(); // Espacio dispara: no debe pulsar un botón con el foco
   setLoading(true, 'Generando terreno…');
   await new Promise(r => setTimeout(r, 30));
   $('menu').classList.add('hidden');
@@ -197,12 +243,16 @@ async function startFlight(keepWorld = false) {
     const world = new World(state.seed, scene, settings.quality);
     state.world = world;
     state.origin = world.addAirport(0, 0, rnd, false);
-    makeDestination(state.origin.x, state.origin.z, rnd() * Math.PI * 2, rnd);
+    if (settings.mode === 'rings') makeDestination(state.origin.x, state.origin.z, state.origin.hdg + (rnd() - 0.5) * 0.9, rnd, [11000, 16000]);
+    else makeDestination(state.origin.x, state.origin.z, rnd() * Math.PI * 2, rnd);
   }
   env.setTime(parseFloat(settings.time));
   env.setWeather(settings.weather, true);
   refreshWeatherButtons(); updateTimeLabel();
-  spawnAircraft(settings.aircraft, 'runway');
+  const mission = beginMission();
+  if (mission) state.cam = 'chase';
+  spawnAircraft(settings.aircraft, mission?.startInAir ? 'air' : 'runway');
+  mission?.start();
   setLoading(true, 'Cargando escenario…');
   await new Promise(r => setTimeout(r, 20));
   state.world.update(state.fm.pos, 0, 0, true);
@@ -210,11 +260,52 @@ async function startFlight(keepWorld = false) {
   state.mode = 'flying';
   $('hud').classList.remove('hidden');
   toast(`${state.origin.icao} ${state.origin.name}  →  ${state.dest.icao} ${state.dest.name}`, '', 5000);
-  toast(state.spec.type === 'heli' ? 'Colectivo con R/F: al 50 % se mantiene en el aire' : 'Gases con R, suelta frenos con P', '', 5000);
+  if (mission?.startInAir) toast('Espacio: cañón · Z: cohetes · Shift / Ctrl: potencia', '', 6000);
+  else toast(state.spec.type === 'heli' ? 'Colectivo con Shift/Ctrl o R/F: al 50 % se mantiene en el aire' : 'Gases con Shift o R, suelta frenos con P', '', 5000);
 }
 
-function makeDestination(fromX, fromZ, bearing, rnd) {
-  const [a, b] = DIST[settings.dist];
+// Contexto compartido con los modos de juego
+function beginMission() {
+  state.mission?.dispose();
+  combat.reset();
+  state.world.focus = null;
+  const ctx = {
+    get fm() { return state.fm; }, get spec() { return state.spec; }, get model() { return state.model; },
+    get mission() { return state.mission; },
+    get world() { return state.world; }, get dest() { return state.dest; }, get seed() { return state.seed; },
+    get origin() { return state.missionOrigin || state.origin; }, set origin(v) { state.missionOrigin = v; },
+    scene, combat: isCombat(settings.mode) ? combat : null, fx: particles, audio, toast,
+    showResult, hideResult: () => $('result').classList.add('hidden'), restart, toMenu, saveBest,
+  };
+  state.missionOrigin = null;
+  state.mission = createMission(settings.mode, ctx);
+  const on = !!state.mission;
+  $('hud-mission').classList.toggle('hidden', !on);
+  $('btn-newdest').style.display = on ? 'none' : '';
+  $('hud-arms').classList.toggle('hidden', !isCombat(settings.mode));
+  $('dest-title').textContent = on ? 'OBJETIVO' : 'DESTINO';
+  return state.mission;
+}
+
+function saveBest(key, score) {
+  settings.best = settings.best || {};
+  settings.best[key] = Math.max(settings.best[key] || 0, score);
+  save();
+  return settings.best[key];
+}
+
+function showResult({ title, big, html, cls = '', primary, secondary }) {
+  $('result-title').textContent = title;
+  $('result-body').innerHTML = `<div class="big ${cls}">${big}</div>${html}`;
+  const [pl, pf] = primary, [sl, sf] = secondary;
+  $('btn-continue').textContent = pl; $('btn-continue').onclick = pf;
+  $('btn-result-new').style.display = 'none';
+  $('btn-result-menu').textContent = sl; $('btn-result-menu').onclick = sf;
+  $('result').classList.remove('hidden');
+}
+
+function makeDestination(fromX, fromZ, bearing, rnd, range = DIST[settings.dist]) {
+  const [a, b] = range;
   const d = a + rnd() * (b - a);
   const x = fromX + Math.sin(bearing) * d, z = fromZ - Math.cos(bearing) * d;
   if (state.dest) {
@@ -226,7 +317,7 @@ function makeDestination(fromX, fromZ, bearing, rnd) {
 }
 
 function newDestinationHere() {
-  if (!state.fm) return;
+  if (!state.fm || state.mission) return;
   const rnd = mulberry32((Math.random() * 1e9) | 0);
   const hdg = -state.fm.euler.y;
   makeDestination(state.fm.pos.x, state.fm.pos.z, hdg + (rnd() - 0.5) * 1.6, rnd);
@@ -245,8 +336,7 @@ const navGlowTex = (() => {
 
 function spawnAircraft(id, start) {
   if (state.model) { scene.remove(state.model.group); }
-  if (state.effects) state.effects.forEach(e => scene.remove(e.obj));
-  state.effects = [];
+  particles.clear();
   const spec = AIRCRAFT_BY_ID[id];
   state.spec = spec;
   const model = buildModel(id);
@@ -294,13 +384,15 @@ function spawnAircraft(id, start) {
     const dx = state.dest.x - ap.x, dz = state.dest.z - ap.z;
     const brg = Math.atan2(dx, -dz);
     const p = { x: ap.x + Math.sin(brg) * 2500, z: ap.z - Math.cos(brg) * 2500 };
-    const gh = Math.max(0, w.height(p.x, p.z));
-    const alt = spec.type === 'heli' ? 180 : Math.max(700, 400 + spec.vs * 6);
+    // salida por encima del relieve de los próximos kilómetros
+    let gh = 0;
+    for (let d = -500; d <= 4000; d += 500) gh = Math.max(gh, w.height(p.x + Math.sin(brg) * d, p.z - Math.cos(brg) * d));
+    const alt = spec.type === 'heli' ? 180 : Math.max(450, 200 + spec.vs * 5);
     fm.pos.set(p.x, gh + alt, p.z);
     fm.quat.setFromEuler(new THREE.Euler(0, -brg, 0, 'YXZ'));
     const sp = spec.type === 'heli' ? 35 : Math.min(spec.vmax * 0.65, spec.vs * 2.4);
     fm.vel.set(Math.sin(brg) * sp, 0, -Math.cos(brg) * sp);
-    fm.throttle = spec.type === 'heli' ? 1 / spec.lift + 0.04 : 0.75;
+    fm.throttle = spec.type === 'heli' ? 0.5 : 0.8;
     fm.rpm = spec.type === 'heli' ? 1 : 0.75;
     fm.gearDown = !!(spec.gearFixed || (spec.type === 'heli' && !spec.gearRetract));
     fm.gear = fm.gearDown ? 1 : 0;
@@ -316,6 +408,7 @@ function spawnAircraft(id, start) {
   state.zoom = 1;
   const box = new THREE.Box3().setFromObject(model.group);
   state.modelSize = box.getSize(new THREE.Vector3()).length();
+  model.size = state.modelSize;
   state.orbitDist = 1; state.orbitYaw = 0; state.orbitPitch = 0.15;
   state.chaseYaw = fm.euler.y;
   state.arrived = false; state.flightTime = 0; state.distFlown = 0; state.lastTouch = null;
@@ -360,11 +453,17 @@ function placeFlyby() {
 }
 
 function restart() {
-  spawnAircraft(state.spec.id, 'runway');
+  $('result').classList.add('hidden');
+  const m = beginMission();
+  spawnAircraft(state.spec.id, m?.startInAir ? 'air' : 'runway');
+  m?.start();
   toast('Vuelo reiniciado');
 }
 
 function toMenu() {
+  state.mission?.dispose(); state.mission = null;
+  combat.reset();
+  tacHud.clear();
   state.mode = 'menu';
   $('hud').classList.add('hidden');
   $('pause').classList.add('hidden');
@@ -384,17 +483,16 @@ $('btn-restart').onclick = () => { togglePause(false); restart(); };
 $('btn-mainmenu').onclick = () => toMenu();
 $('btn-newdest').onclick = () => { togglePause(false); newDestinationHere(); };
 $('btn-menu').onclick = () => togglePause();
-$('btn-continue').onclick = () => $('result').classList.add('hidden');
-$('btn-result-new').onclick = () => newDestinationHere();
-$('btn-result-menu').onclick = () => toMenu();
 $('btn-sound').onclick = () => { audio.setMuted(!audio.muted); $('btn-sound').textContent = audio.muted ? '🔇' : '🔊'; };
 
 // ---------------- Entrada ----------------
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   const k = e.code;
+  // Ctrl es «reducir potencia»: evita los atajos del navegador (Ctrl+S, Ctrl+D…) mientras se vuela
+  if (state.mode === 'flying' && e.ctrlKey) e.preventDefault();
   if (state.mode !== 'flying') { if (k === 'Enter') { audio.init(); startFlight(); } return; }
-  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Tab'].includes(k)) e.preventDefault();
+  if (['Space', 'ControlLeft', 'ControlRight', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Tab'].includes(k)) e.preventDefault();
   if (e.repeat) { keys.add(k); return; }
   keys.add(k);
   const fm = state.fm, spec = state.spec;
@@ -433,10 +531,19 @@ addEventListener('keydown', (e) => {
   if (k in digits) fm.throttle = digits[k];
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
+// Ctrl+W no se puede interceptar: con la tecla W de cabeceo cerraría la pestaña en pleno vuelo
+addEventListener('beforeunload', (e) => { if (state.mode === 'flying') { e.preventDefault(); e.returnValue = ''; } });
 addEventListener('blur', () => keys.clear());
 
 let drag = null;
-canvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
+const mouse = { x: 0, y: 0, l: false, r: false };
+addEventListener('pointermove', (e) => { mouse.x = e.clientX / innerWidth * 2 - 1; mouse.y = e.clientY / innerHeight * 2 - 1; });
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+addEventListener('pointerup', () => { mouse.l = mouse.r = false; });
+canvas.addEventListener('pointerdown', (e) => {
+  if (settings.mouseFly && state.mode === 'flying') { if (e.button === 0) mouse.l = true; if (e.button === 2) mouse.r = true; return; }
+  drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId);
+});
 canvas.addEventListener('pointermove', (e) => {
   if (!drag || state.mode !== 'flying') return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -469,9 +576,16 @@ function readInput(dt) {
     return cur + clamp(t - cur, -rate * dt, rate * dt);
   };
   inp.pitch = ease(inp.pitch, tp); inp.roll = ease(inp.roll, tr); inp.yaw = ease(inp.yaw, ty);
+  if (settings.mouseFly && !tp && !tr) {
+    // el cursor hace de palanca: zona muerta central y respuesta progresiva
+    const curve = (v) => { const a = Math.max(0, Math.abs(v) - 0.05) / 0.95; return Math.sign(v) * a * a; };
+    inp.pitch = curve(mouse.y) * 1.4 * (settings.invert ? -1 : 1); inp.roll = curve(mouse.x) * 1.4;
+    inp.pitch = clamp(inp.pitch, -1, 1); inp.roll = clamp(inp.roll, -1, 1);
+  }
+  inp.gun = !!k('Space') || mouse.l; inp.rocket = !!k('KeyZ') || mouse.r;
   inp.brake = !!k('KeyB'); inp.speedbrake = inp.brake;
   const thrUp = k('KeyR', 'PageUp', 'ShiftLeft', 'ShiftRight', 'Equal', 'NumpadAdd');
-  const thrDn = k('KeyF', 'PageDown', 'Minus', 'NumpadSubtract');
+  const thrDn = k('KeyF', 'PageDown', 'ControlLeft', 'ControlRight', 'Minus', 'NumpadSubtract');
   const tRate = spec.type === 'heli' ? 0.7 : 0.5;
   fm.throttle = clamp(fm.throttle + (thrUp - thrDn) * tRate * dt, 0, 1);
   // mando
@@ -488,61 +602,53 @@ function readInput(dt) {
     const edge = (i, fn) => { const p = !!gp.buttons[i]?.pressed; if (p && !state.padPrev[i]) fn(); state.padPrev[i] = p; };
     edge(0, () => dispatchKey('KeyG')); edge(3, () => dispatchKey('KeyC')); edge(2, () => dispatchKey('KeyX')); edge(9, () => dispatchKey('Escape'));
     if (gp.buttons[1]?.pressed) inp.brake = inp.speedbrake = true;
+    if (gp.buttons[5]?.pressed) inp.gun = true;
+    if (gp.buttons[4]?.pressed) inp.rocket = true;
   }
 }
 function dispatchKey(code) { dispatchEvent(new KeyboardEvent('keydown', { code })); setTimeout(() => dispatchEvent(new KeyboardEvent('keyup', { code })), 50); }
 
-// ---------------- Efectos (explosión, humo) ----------------
-const smokeTex = (() => {
-  const cv = document.createElement('canvas'); cv.width = cv.height = 64;
-  const g = cv.getContext('2d');
-  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.6, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
-  return new THREE.CanvasTexture(cv);
-})();
-function spawnExplosion(pos) {
-  for (let i = 0; i < 40; i++) {
-    const fire = i < 16;
-    const m = new THREE.SpriteMaterial({ map: smokeTex, color: fire ? 0xffa040 : 0x333333, transparent: true, depthWrite: false, blending: fire ? THREE.AdditiveBlending : THREE.NormalBlending });
-    const s = new THREE.Sprite(m);
-    s.position.copy(pos);
-    scene.add(s);
-    state.effects.push({
-      obj: s, life: fire ? 1.5 + Math.random() : 6 + Math.random() * 6, age: 0, fire,
-      vel: new THREE.Vector3((Math.random() - 0.5) * (fire ? 20 : 6), Math.random() * (fire ? 18 : 8) + 2, (Math.random() - 0.5) * (fire ? 20 : 6)),
-      size: fire ? 6 + Math.random() * 6 : 6 + Math.random() * 8,
-    });
-  }
-}
+// ---------------- Efectos de vuelo ----------------
+const _ev = new THREE.Vector3(), _eb = new THREE.Vector3();
+let exhaustAcc = 0;
 function updateEffects(dt) {
-  if (!state.effects) return;
-  for (let i = state.effects.length - 1; i >= 0; i--) {
-    const e = state.effects[i];
-    e.age += dt;
-    e.obj.position.addScaledVector(e.vel, dt);
-    e.vel.multiplyScalar(Math.exp(-dt * (e.fire ? 1.5 : 0.3)));
-    if (!e.fire) e.vel.y += dt * 1.5;
-    const t = e.age / e.life;
-    e.obj.scale.setScalar(e.size * (1 + t * (e.fire ? 1.5 : 4)));
-    e.obj.material.opacity = (1 - t) * (e.fire ? 1 : 0.7);
-    if (t >= 1) { scene.remove(e.obj); e.obj.material.dispose(); state.effects.splice(i, 1); }
+  const fm = state.fm, spec = state.spec;
+  if (!fm) { particles.update(dt); return; }
+  if (!fm.crashed) {
+    // chorro de postcombustión y de los reactores: partículas brillantes que alimentan el bloom
+    const ex = state.model.parts.exhaust;
+    if (ex.length && fm.rpm > 0.35) {
+      const ab = fm.ab ? (fm.rpm - 0.85) / 0.15 : 0;
+      exhaustAcc += dt * (ab > 0 ? 170 : spec.engine === 'jet' ? 40 * fm.rpm : 0);
+      _eb.set(0, 0, 1).applyQuaternion(fm.quat);
+      while (exhaustAcc >= 1) {
+        exhaustAcc -= 1;
+        const p = ex[Math.floor(Math.random() * ex.length)];
+        // reparto a lo largo del recorrido del fotograma: estela continua aunque bajen los FPS
+        _ev.copy(p).applyQuaternion(fm.quat).add(fm.pos).addScaledVector(fm.vel, -Math.random() * dt);
+        const sp = 30 + Math.random() * 45;
+        if (ab > 0) particles.glow(_ev.x, _ev.y, _ev.z, fm.vel.x + _eb.x * sp, fm.vel.y + _eb.y * sp, fm.vel.z + _eb.z * sp, 7, 3.1, 1.3, 1.5 + ab * 1.6, 0.2 + Math.random() * 0.22, 1);
+        else particles.glow(_ev.x, _ev.y, _ev.z, fm.vel.x + _eb.x * sp, fm.vel.y + _eb.y * sp, fm.vel.z + _eb.z * sp, 1.1, 0.7, 0.45, 0.7, 0.12, 1);
+      }
+    }
+    // humo de avería
+    const pl = state.mission?.combat?.player;
+    if (pl && pl.hp < pl.maxHp * 0.4 && Math.random() < dt * 22) particles.puff(fm.pos.x, fm.pos.y, fm.pos.z, fm.vel.x * 0.2, fm.vel.y * 0.2 + 1, fm.vel.z * 0.2, 0.9 + Math.random(), 2.2, 0.12);
+  } else if (Math.random() < dt * 7) {
+    particles.puff(fm.pos.x + (Math.random() - 0.5) * 3, fm.pos.y + 1, fm.pos.z + (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 2, 7 + Math.random() * 3, (Math.random() - 0.5) * 2, 3 + Math.random() * 2, 5, 0.1);
   }
-  // humo continuo tras accidente
-  if (state.fm && state.fm.crashed && Math.random() < dt * 6 && state.effects.length < 120) {
-    const m = new THREE.SpriteMaterial({ map: smokeTex, color: 0x2a2a2a, transparent: true, depthWrite: false });
-    const s = new THREE.Sprite(m); s.position.copy(state.fm.pos); scene.add(s);
-    state.effects.push({ obj: s, life: 10, age: 0, fire: false, vel: new THREE.Vector3((Math.random() - 0.5) * 2, 6 + Math.random() * 3, (Math.random() - 0.5) * 2), size: 5 });
-  }
+  particles.update(dt);
 }
 
 // ---------------- Instrumentos: estado común ----------------
 const inst = {};
+const navTarget = () => state.mission?.nav() || state.dest;
 function computeInstState() {
   const fm = state.fm, spec = state.spec, e = fm.euler;
   const kt = 1.94384, ft = 3.28084;
   const hdg = ((-e.y * RAD) % 360 + 360) % 360;
-  const dx = state.dest.x - fm.pos.x, dz = state.dest.z - fm.pos.z;
+  const nav = navTarget();
+  const dx = nav.x - fm.pos.x, dz = nav.z - fm.pos.z;
   inst.ias = fm.ias * kt;
   inst.alt = fm.pos.y * ft;
   inst.vs = fm.vel.y * ft * 60;
@@ -552,7 +658,7 @@ function computeInstState() {
   inst.g = fm.g; inst.slip = -fm.beta * 3; inst.turnRate = -fm.omega.y * RAD;
   inst.destBrg = ((Math.atan2(dx, -dz) * RAD) + 360) % 360;
   inst.destDist = Math.hypot(dx, dz) / 1000;
-  inst.destName = state.dest.icao;
+  inst.destName = nav.icao;
   inst.gs = Math.hypot(fm.vel.x, fm.vel.z) * kt;
   inst.windDir = ((Math.atan2(-env.wind.x, env.wind.z) * RAD) + 360) % 360;
   inst.windKt = Math.hypot(env.wind.x, env.wind.z) * kt;
@@ -583,7 +689,19 @@ function updateHUD(dt) {
   hud.agl.textContent = Math.max(0, Math.round(met ? agl : agl * 3.28084));
   hud.g.textContent = s.g.toFixed(1);
   $('u-spd').textContent = met ? 'km/h' : 'kt'; $('u-alt').textContent = met ? 'm' : 'ft'; $('u-vs').textContent = met ? 'm/s' : 'fpm'; $('u-agl').textContent = met ? 'm' : 'ft';
-  hud.dest.textContent = `${state.dest.icao} · ${state.dest.name}`;
+  const nav = navTarget();
+  hud.dest.textContent = `${nav.icao} · ${nav.name}`;
+  if (state.mission) {
+    $('hud-mission').innerHTML = state.mission.panel();
+    const pl = combat.player;
+    if (state.mission.combat && pl) {
+      $('h-hp').style.width = `${pl.hp / pl.maxHp * 100}%`;
+      $('h-hp').className = pl.hp < pl.maxHp * 0.35 ? 'low' : '';
+      $('h-ammo').textContent = pl.ammo;
+      $('h-rockets').textContent = pl.rockets;
+      $('h-score').textContent = combat.score;
+    }
+  }
   hud.dist.textContent = s.destDist.toFixed(1);
   hud.brg.textContent = String(Math.round(s.destBrg)).padStart(3, '0');
   const gsms = Math.hypot(fm.vel.x, fm.vel.z);
@@ -720,11 +838,18 @@ function updateCamera(dt) {
 }
 
 // ---------------- Animación del modelo ----------------
+const _sw = new THREE.Euler(), _sq = new THREE.Quaternion();
 function animateModel(dt) {
   const fm = state.fm, p = state.model.parts, inp = state.input;
   const g = state.model.group;
   g.position.copy(fm.pos);
   g.quaternion.copy(fm.quat);
+  if (state.spec.type === 'heli' && !fm.crashed && !fm.onGround) {
+    // balanceo dinámico: el fuselaje oscila bajo el rotor en estacionario y se retrasa al mandar cíclico
+    const t = performance.now() / 1000, hov = 1 - clamp(fm.vel.length() / 25, 0, 1);
+    _sw.set(Math.sin(t * 1.3) * 0.012 * hov - inp.pitch * 0.035, 0, Math.sin(t * 1.7 + 1) * 0.016 * hov + inp.roll * 0.04);
+    g.quaternion.multiply(_sq.setFromEuler(_sw));
+  }
   const rpm = fm.crashed ? 0 : fm.rpm;
   for (const pr of p.props) pr.rotation.z += (5 + rpm * 70) * dt * (rpm > 0.01 ? 1 : 0);
   for (const r of p.rotors) r.rotation.y += (rpm * 20) * dt;
@@ -775,24 +900,28 @@ function loop() {
       menuCam.position.set(-d * 0.62, d * 0.22 + 1, d * 0.62);
       menuCam.lookAt(-menuModel.size * 0.2, menuModel.gearHeight * 0.7 + 0.5, 0);
     }
-    renderer.render(menuScene, menuCam);
+    fx.render(menuScene, menuCam);
     return;
   }
   const fm = state.fm;
   if (!state.paused) {
     readInput(dt);
-    if (document.getElementById('set-timeflow').checked) { env.setTime(env.hour + dt * 60 / 3600); if (Math.random() < 0.02) updateTimeLabel(); }
+    if (settings.timeflow) { env.setTime(env.hour + dt * 60 / 3600); if (Math.random() < 0.02) updateTimeLabel(); }
     acc += dt;
     const p0 = fm.pos.clone();
     while (acc >= STEP) {
       fm.step(STEP, state.input, env, state.world);
       acc -= STEP;
     }
+    const mc = state.mission?.combat;
+    if (mc) { mc.fire(state.input, dt); mc.update(dt, state.world); }
+    state.mission?.update(dt);
     state.distFlown += fm.pos.distanceTo(p0);
     if (!fm.crashed) state.flightTime += dt;
     for (const ev of fm.events) {
       if (ev.type === 'crash') {
-        spawnExplosion(fm.pos.clone());
+        particles.explosion(fm.pos, 2);
+        state.mission?.onCrash(ev.reason);
         audio.explosion();
         toast(ev.reason, 'bad', 7000);
         toast('Pulsa Enter para reiniciar', 'bad', 7000);
@@ -800,6 +929,7 @@ function loop() {
         state.orbitDist = 2.5;
       } else if (ev.type === 'touchdown') {
         audio.touchdown(clamp(ev.impact / 3, 0.3, 1.2));
+        state.mission?.onTouchdown(ev);
         state.lastTouch = ev.impact;
         const fpm = Math.round(ev.impact * 196.85);
         if (state.spec.type !== 'heli' || ev.impact > 1) toast(`Toma de contacto: ${fpm} ft/min ${fpm < 200 ? '· ¡Suave!' : fpm < 400 ? '· Correcta' : '· Dura'}`, fpm < 400 ? 'good' : '');
@@ -809,7 +939,7 @@ function loop() {
     checkArrival();
     // ayuda: baja el tren automáticamente en aproximación
     const sp = state.spec;
-    if (!fm.gearDown && !fm.crashed && !fm.onGround && sp.type === 'plane' && !sp.gearFixed && fm.vel.y < -0.5 && fm.ias < sp.vs * 1.7) {
+    if (!state.mission?.combat && !fm.gearDown && !fm.crashed && !fm.onGround && sp.type === 'plane' && !sp.gearFixed && fm.vel.y < -0.5 && fm.ias < sp.vs * 1.7) {
       const agl = fm.pos.y - sp.gearH - Math.max(0, state.world.groundHeight(fm.pos.x, fm.pos.z));
       if (agl < 90) { fm.gearDown = true; audio.gearMotor(); toast('Tren bajado automáticamente'); }
     }
@@ -834,28 +964,17 @@ function loop() {
     airspeed: fm.ias, rain: env.w.rain, windStrength: env.w.wind, onGround: fm.onGround, groundSpeed: Math.hypot(fm.vel.x, fm.vel.z),
     warn: !!state.warn && !state.paused, warnType: fm.stall ? 'stall' : 'gear', crashed: fm.crashed,
   });
-  if (state.cam === 'cockpit') {
-    // pasada 1: mundo
-    camera.layers.set(0);
-    renderer.render(scene, camera);
-    // pasada 2: interior de cabina sobre el mundo
-    renderer.autoClear = false;
-    renderer.clearDepth();
-    const n = camera.near, f = camera.far;
-    camera.near = 0.02; camera.far = 60; camera.updateProjectionMatrix();
-    camera.layers.set(1);
-    renderer.render(scene, camera);
-    camera.near = n; camera.far = f; camera.updateProjectionMatrix();
-    camera.layers.set(0);
-    renderer.autoClear = true;
-  } else {
-    renderer.render(scene, camera);
+  fx.render(scene, camera, state.cam === 'cockpit');
+  const m = state.mission;
+  if (m) {
+    const pl = m.combat ? combat.player : null;
+    tacHud.draw(camera, { fm, markers: m.markers(), armed: !!pl && !!state.spec.arms, hitFlash: pl?.hitFlash || 0, ammoEmpty: !!pl && pl.ammo <= 0 });
   }
 }
 
 function checkArrival() {
   const fm = state.fm, d = state.dest;
-  if (state.arrived || fm.crashed || !fm.onGround) return;
+  if (state.mission || state.arrived || fm.crashed || !fm.onGround) return;
   const gs = Math.hypot(fm.vel.x, fm.vel.z);
   if (gs > 3) return;
   const l = state.world.airportLocal(d, fm.pos.x, fm.pos.z);
@@ -865,22 +984,27 @@ function checkArrival() {
     const t = state.flightTime;
     const fpm = state.lastTouch != null ? Math.round(state.lastTouch * 196.85) : 0;
     const rating = fpm < 150 ? '★★★ Mantequilla' : fpm < 300 ? '★★ Muy buena' : fpm < 500 ? '★ Aceptable' : 'Dura, pero de una pieza';
-    $('result-title').textContent = `¡Bienvenido a ${d.name}!`;
-    $('result-body').innerHTML = `<div class="big">${d.icao}</div>
-      Tiempo de vuelo: <b>${Math.floor(t / 60)} min ${Math.floor(t % 60)} s</b><br>
+    showResult({
+      title: `¡Bienvenido a ${d.name}!`, big: d.icao, html: `Tiempo de vuelo: <b>${Math.floor(t / 60)} min ${Math.floor(t % 60)} s</b><br>
       Distancia recorrida: <b>${(state.distFlown / 1000).toFixed(1)} km</b><br>
       Última toma: <b>${fpm} ft/min</b> — ${rating}<br><br>
-      Puedes seguir volando libremente o fijar un nuevo destino.`;
-    $('result').classList.remove('hidden');
+      Puedes seguir volando libremente o fijar un nuevo destino.`,
+      primary: ['Seguir volando', () => $('result').classList.add('hidden')], secondary: ['Menú', () => toMenu()],
+    });
+    $('btn-result-new').style.display = ''; $('btn-result-new').onclick = () => newDestinationHere();
   }
 }
 
 addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
+  fx.resize(innerWidth, innerHeight);
+  tacHud.resize();
+  particles.setViewport(innerHeight * renderer.getPixelRatio(), camera.fov);
   camera.aspect = menuCam.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix(); menuCam.updateProjectionMatrix();
 });
 
+particles.setViewport(innerHeight * renderer.getPixelRatio(), camera.fov);
 buildMenu();
 bindSettings();
 showPreview();

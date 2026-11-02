@@ -1,7 +1,7 @@
 // Modelos low-poly procedurales de todas las aeronaves.
 // Convención: morro hacia -Z, arriba +Y, derecha +X. Origen ≈ centro de gravedad.
 import * as THREE from 'three';
-import { AIRCRAFT_BY_ID } from './aircraft.js?v=4';
+import { AIRCRAFT_BY_ID } from './aircraft.js?v=5';
 
 const DEG = Math.PI / 180;
 const matCache = new Map();
@@ -38,7 +38,8 @@ function rAt(profile, z) {
 
 function latheGeo(profile, seg = 16, sx = 1, sy = 1, yOff = 0) {
   const pts = profile.map(([z, r]) => new THREE.Vector2(Math.max(r, 0.002), -z));
-  const g = new THREE.LatheGeometry(pts, seg);
+  // fuselajes de pocas caras: la faceta retro se ve incluso a contraluz
+  const g = new THREE.LatheGeometry(pts, Math.min(seg, 10));
   g.rotateX(-Math.PI / 2);
   g.scale(sx, sy, 1);
   g.translate(0, yOff, 0);
@@ -254,7 +255,7 @@ function star(r, color = 0xcc1111) {
 function newCtx(spec) {
   return {
     grp: new THREE.Group(), spec,
-    parts: { hide: [], gear: [], props: [], rotors: [], tailRotors: [], surfaces: [], ab: [], navLights: [], strobes: [], sweep: [], discs: [] },
+    parts: { hide: [], gear: [], props: [], rotors: [], tailRotors: [], surfaces: [], ab: [], navLights: [], strobes: [], sweep: [], discs: [], exhaust: [] },
   };
 }
 
@@ -651,15 +652,16 @@ function buildFighter(spec, o) {
       inner.position.set(sx * nz.x, nz.y, nz.z + 0.2); c.grp.add(inner);
       const flame = new THREE.Mesh(
         new THREE.ConeGeometry((nz.r || nz.box[1] / 2) * 0.8, 1, 12, 1, true).rotateX(-Math.PI / 2).translate(0, 0, 0.5),
-        new THREE.MeshBasicMaterial({ color: 0xff8a3a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+        new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff8a3a).multiplyScalar(3.5), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
       flame.position.set(sx * nz.x, nz.y, nz.z + nz.len);
       flame.userData.keep = true;
       c.grp.add(flame);
       const core = new THREE.Mesh(
         new THREE.ConeGeometry((nz.r || nz.box[1] / 2) * 0.5, 1, 10, 1, true).rotateX(-Math.PI / 2).translate(0, 0, 0.5),
-        new THREE.MeshBasicMaterial({ color: 0x9ab8ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+        new THREE.MeshBasicMaterial({ color: new THREE.Color(0x9ab8ff).multiplyScalar(4), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
       core.position.copy(flame.position); core.userData.keep = true; c.grp.add(core);
       c.parts.ab.push(flame, core);
+      c.parts.exhaust.push(new THREE.Vector3(sx * nz.x, nz.y, nz.z + nz.len + 0.4));
     }
   }
   // Morro: tubo pitot
@@ -996,10 +998,75 @@ function buildS76(spec) {
   return c;
 }
 
+// =================== A-10 THUNDERBOLT II ===================
+// Ala recta y baja, dobles derivas, motores en góndola sobre la cola y cañón GAU-8 en el morro.
+function buildA10(spec) {
+  const c = newCtx(spec);
+  const body = mat(0x9aa89a, { m: 0.1, r: 0.6 }), dark = mat(0x6d7c70, { m: 0.1, r: 0.65 }), metal = mat(0x4c4f52, { m: 0.85, r: 0.35 });
+  const prof = [[8.1, 0.2], [6.2, 0.52], [3.0, 0.8], [0.0, 0.92], [-3.0, 0.92], [-4.6, 0.84], [-6.2, 0.62], [-7.6, 0.36], [-8.0, 0.16]];
+  fuselage(c, prof, -3.5, -6.0, 1.0, 1.0, body, 8);
+  // bañera de titanio: faceta angulosa bajo la cabina
+  const tub = mesh(new THREE.BoxGeometry(1.45, 0.75, 3.6), dark); tub.position.set(0, -0.45, -4.6); tub.userData.keep = true; c.grp.add(tub);
+  canopy(c, { z: -4.8, len: 2.6, w: 0.56, h: 0.68, y: 0.56 }, 0x223344, true, 0x2c2f33);
+  // Ala recta
+  const wing = [[0.7, -1.7], [3.4, -1.7], [8.8, -1.2], [8.8, 0.35], [3.4, 0.75], [0.7, 0.75]];
+  pair(c, plate(wing, 0.3, -0.38, 0.45), body, { keep: true });
+  for (const [sx, input] of [[1, 'rollR'], [-1, 'rollL']]) {
+    surface(c, new THREE.Vector3(sx * 6.6, -0.38, 0.5), 'x', input, 0.35, new THREE.BoxGeometry(3.8, 0.07, 0.42).translate(0, 0, 0.21), dark);
+  }
+  // Carenados del tren bajo el ala
+  for (const sx of [1, -1]) {
+    const p = mesh(new THREE.BoxGeometry(0.7, 0.62, 2.8), body); p.position.set(sx * 2.2, -0.68, -0.5); p.userData.keep = true; c.grp.add(p);
+  }
+  // Góndolas de motor y soportes
+  for (const sx of [1, -1]) {
+    const n = mesh(latheGeo([[5.4, 0.42], [4.9, 0.6], [3.2, 0.7], [1.7, 0.72], [1.4, 0.56]], 8), body);
+    n.position.set(sx * 1.45, 1.15, 0); n.userData.keep = true; c.grp.add(n);
+    const lip = mesh(new THREE.CircleGeometry(0.5, 8), mat(0x0a0a0a)); lip.rotation.y = Math.PI; lip.position.set(sx * 1.45, 1.15, 1.38); lip.userData.keep = true; c.grp.add(lip);
+    const py = mesh(new THREE.BoxGeometry(0.2, 0.7, 2.2), dark); py.position.set(sx * 1.0, 0.72, 3.4); py.rotation.z = sx * 0.75; py.userData.keep = true; c.grp.add(py);
+    const nz = mesh(new THREE.CircleGeometry(0.4, 8), mat(0x220d00, { e: 0x441800 })); nz.position.set(sx * 1.45, 1.15, 5.41); nz.userData.keep = true; c.grp.add(nz);
+    c.parts.exhaust.push(new THREE.Vector3(sx * 1.45, 1.15, 5.7));
+  }
+  // Cola: estabilizador con dobles derivas en los extremos
+  const hs = surface(c, new THREE.Vector3(0, 0.15, 6.3), 'x', 'pitch', 0.28,
+    plate([[0, -0.75], [3.1, -0.65], [3.1, 1.05], [0, 1.15]], 0.12, 0), body);
+  const hsl = mesh(plate([[0, -0.75], [3.1, -0.65], [3.1, 1.05], [0, 1.15]], 0.12, 0), body); hsl.scale.x = -1; hsl.userData.keep = true; hs.add(hsl);
+  for (const sx of [1, -1]) {
+    const f = mesh(fin([[0, -0.95], [0.5, 1.9], [1.8, 1.9], [1.85, -1.0]], 0.13), body);
+    f.position.set(sx * 3.15, 0.15, 5.6); f.userData.keep = true; c.grp.add(f);
+    surface(c, new THREE.Vector3(sx * 3.15, 0.15, 7.45), 'y', 'yaw', 0.35, fin([[0, -0.8], [0, 1.7], [0.3, 1.7], [0.3, -0.8]], 0.08), dark);
+  }
+  // Cañón GAU-8: siete tubos facetados
+  const gun = new THREE.Group(); gun.position.set(0, -0.28, -8.0);
+  gun.add(mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.9, 7).rotateX(Math.PI / 2).translate(0, 0, 0.1), metal));
+  for (let i = 0; i < 7; i++) {
+    const a = i / 7 * Math.PI * 2;
+    gun.add(mesh(new THREE.CylinderGeometry(0.035, 0.035, 2.0, 5).rotateX(Math.PI / 2).translate(Math.cos(a) * 0.13, Math.sin(a) * 0.13, -0.9), metal));
+  }
+  gun.traverse(o => { o.userData.keep = true; });
+  c.grp.add(gun); c.parts.gun = gun;
+  // Dientes del «Warthog» pintados en el morro
+  for (const sx of [1, -1]) {
+    const m = mesh(new THREE.ConeGeometry(0.42, 1.5, 3).rotateZ(Math.PI / 2).translate(0, 0, 0), mat(0xb5322a, { r: 0.8, m: 0 }));
+    m.scale.set(1, 0.42, 0.25); m.position.set(sx * 0.42, -0.32, -6.7); m.rotation.y = sx * 1.3; m.userData.keep = true; c.grp.add(m);
+  }
+  // Soportes con cohetes
+  for (const sx of [1, -1]) for (const x of [3.6, 5.2]) {
+    const pod = mesh(new THREE.CylinderGeometry(0.2, 0.2, 2, 7).rotateX(Math.PI / 2), mat(0x8c8f7a));
+    pod.position.set(sx * x, -0.72, -0.5); pod.userData.keep = true; c.grp.add(pod);
+  }
+  addGear(c, spec, 0, -0.6, -5.4, 0.34, 0.2, 'x', -1.6, { strut: 0.08 });
+  for (const sx of [1, -1]) addGear(c, spec, sx * 2.2, -0.6, -0.5, 0.48, 0.28, 'x', -1.45, { strut: 0.1 });
+  navLights(c, new THREE.Vector3(-8.8, -0.38, -0.4), new THREE.Vector3(8.8, -0.38, -0.4), null);
+  addPilot(c, spec, [], 0x3a4030);
+  c.parts.landingLight = new THREE.Vector3(0, -0.9, -5.4);
+  return c;
+}
+
 const BUILDERS = {
   c172: buildC172, extra: buildExtra, spitfire: buildSpitfire, p51: buildP51,
   b737: buildB737, learjet: buildLearjet,
-  f14: buildF14, f16: buildF16, f18: buildF18, f22: buildF22, mig29: buildMig29, mig21: buildMig21,
+  a10: buildA10, f14: buildF14, f16: buildF16, f18: buildF18, f22: buildF22, mig29: buildMig29, mig21: buildMig21,
   apache: buildApache, bell206: buildBell206, s76: buildS76,
 };
 

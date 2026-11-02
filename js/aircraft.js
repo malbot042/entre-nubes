@@ -6,6 +6,7 @@ export const CATEGORIES = [
   { id: 'light', name: 'Ligeros' },
   { id: 'civil', name: 'Reactores civiles' },
   { id: 'warbird', name: 'Clásicos de guerra' },
+  { id: 'attack', name: 'Ataque a tierra' },
   { id: 'fighter', name: 'Cazas' },
   { id: 'heli', name: 'Helicópteros' },
 ];
@@ -52,6 +53,13 @@ export const AIRCRAFT = [
     mass: 4200, S: 21.8, vs: 44, vmax: 195, tw: 0.42, roll: 130, pitch: 52, yaw: 22, resp: 0.26,
     gearH: 1.85, taildragger: 11, flaps: true, cockpit: 'warbird', panel: 'warbird', blades: 4, propR: 1.7,
     eye: [0, 0.9, -0.1], head: { yaw: 170, up: 85, down: 50 }, fuelL: 1000, burn: 0.11,
+  },
+  {
+    id: 'a10', name: 'A-10 Thunderbolt II', cat: 'attack', type: 'plane', engine: 'jet',
+    desc: 'El «Warthog»: blindado, pesado y nada veloz, nacido para las pasadas a baja altura con su cañón GAU-8.',
+    mass: 14500, S: 47, vs: 58, vmax: 190, tw: 0.36, roll: 95, pitch: 22, yaw: 11, resp: 0.42,
+    gearH: 1.75, flaps: true, cockpit: 'fighter', panel: 'fighter',
+    eye: [0, 0.9, -4.8], head: { yaw: 165, up: 85, down: 55 }, fuelL: 6000, burn: 0.4,
   },
   {
     id: 'f14', name: 'F-14 Tomcat', cat: 'fighter', type: 'plane', engine: 'jet', ab: true, swing: true,
@@ -117,5 +125,21 @@ export const AIRCRAFT = [
     eye: [0.42, 0.95, -2.85], head: { yaw: 150, up: 65, down: 65 }, fuelL: 1000, burn: 0.08,
   },
 ];
+
+// Armamento: cañón (disparos/s, daño, munición, bocas), cohetes no guiados y resistencia.
+const gun = (rps, dmg, ammo, ...at) => ({ rps, dmg, ammo, at });
+const ARMS = {
+  a10: { gun: gun(28, 20, 1150, [0, -0.28, -9.8]), rockets: 38, racks: [[3.6, -0.75, -1.6], [5.2, -0.75, -1.6]], hp: 280 },
+  apache: { gun: gun(10, 14, 1200, [0, -1.25, -3.6]), rockets: 38, racks: [[2.1, -0.4, -0.8]], hp: 200 },
+  f14: { gun: gun(20, 9, 675, [-0.8, 0.1, -7.2]), rockets: 14, racks: [[2.4, -0.6, -1]], hp: 140 },
+  f16: { gun: gun(20, 9, 510, [-0.7, 0.3, -4.6]), rockets: 14, racks: [[3.2, -0.5, 0.5]], hp: 110 },
+  f18: { gun: gun(20, 9, 578, [0, 0.25, -8.4]), rockets: 14, racks: [[4, -0.5, 0.5]], hp: 120 },
+  f22: { gun: gun(20, 10, 480, [1.2, 0.2, -4.2]), rockets: 8, racks: [[1.2, -0.5, 0]], hp: 120 },
+  mig29: { gun: gun(16, 12, 150 * 3, [-1, 0.1, -4]), rockets: 14, racks: [[3.2, -0.5, 0.5]], hp: 120 },
+  mig21: { gun: gun(16, 11, 400, [0, -0.6, -3.2]), rockets: 8, racks: [[2, -0.4, 0.5]], hp: 100 },
+  spitfire: { gun: gun(18, 7, 700, [1.9, -0.1, -0.9], [-1.9, -0.1, -0.9]), rockets: 8, racks: [[2.8, -0.3, -0.3]], hp: 90 },
+  p51: { gun: gun(18, 7, 800, [2, -0.1, -0.7], [-2, -0.1, -0.7]), rockets: 10, racks: [[3, -0.3, -0.3]], hp: 95 },
+};
+for (const a of AIRCRAFT) a.arms = ARMS[a.id] || null;
 
 export const AIRCRAFT_BY_ID = Object.fromEntries(AIRCRAFT.map(a => [a.id, a]));
