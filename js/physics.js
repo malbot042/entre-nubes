@@ -162,9 +162,14 @@ export class FlightModel {
       const tilt = Math.max(0.55, Math.cos(pitch) * Math.cos(roll));
       const L = s.mass * G * (1 + (this.throttle - 0.5) * 1.7) / tilt * (1 + (ge - 1) * 0.3 + (etl - 1) * 0.2) * this.rpm * this.rpm;
       F.y += L;
-      F.x -= this.cx * vb.x * Math.abs(vb.x);
-      F.y -= this.cy * vb.y * Math.abs(vb.y);
-      F.z -= this.cz * vb.z * Math.abs(vb.z);
+      // resistencia en ejes del suelo (avance/lateral según el rumbo, vertical aparte):
+      // así inclinar el morro hace avanzar sin frenar hacia abajo
+      const ax = this.vel.x - env.wind.x, ay = this.vel.y - env.wind.y, az = this.vel.z - env.wind.z;
+      const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+      const af = ax * fx + az * fz, ar = ax * rx + az * rz;
+      const Ff = -this.cz * af * Math.abs(af), Fr = -this.cx * ar * Math.abs(ar);
+      this.heliDrag = this.heliDrag || new THREE.Vector3();
+      this.heliDrag.set(fx * Ff + rx * Fr, -this.cy * ay * Math.abs(ay) - s.mass * 0.6 * ay, fz * Ff + rz * Fr);
       this.liftRatio = L / (s.mass * G);
       this.g = F.y / (s.mass * G);
       this.aoa = 0; this.beta = V > 3 ? Math.atan2(vb.x, Math.max(-vb.z, 1)) : 0;
@@ -187,6 +192,7 @@ export class FlightModel {
 
     // fuerzas -> mundo
     F.applyQuaternion(this.quat);
+    if (this.isHeli) F.add(this.heliDrag);
     F.y -= s.mass * G;
     this.vel.addScaledVector(F, dt / s.mass);
     // integración de la orientación
