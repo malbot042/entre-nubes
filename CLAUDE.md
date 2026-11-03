@@ -16,11 +16,13 @@ python3 -m http.server 8000   # then open http://localhost:8000
 
 There are no tests, linter or build. To verify changes, load the page in a browser and check the console. `window.__entreNubes` exposes `{ state, scene, camera, env }` for debugging (for example `state.fm` is the flight model and `state.world` the terrain).
 
-**Cache busting:** every local import carries `?v=N` (`from './world.js?v=18'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
+**Cache busting:** every local import carries `?v=N` (`from './world.js?v=21'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
+
+The game version shown to players (menu and pause screen, console, `window.__entreNubes.version`) is this same N, read from `import.meta.url` in `main.js`. Bumping the cache number therefore publishes a new version: bump it with every change that gets committed, and mention it in the commit message.
 
 ```
-sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=18'#g" js/*.js
-sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=18\"#g" index.html
+sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=21'#g" js/*.js
+sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=21\"#g" index.html
 ```
 
 ## Architecture
@@ -61,7 +63,7 @@ Main loop per frame: input → fixed-step physics (`STEP = 1/120`, accumulated) 
 - `physics.js`: `FlightModel`.
   - Planes use a lift/drag model with auto-trim toward level-flight angle of attack.
   - Helicopters are arcade-style: 50 % collective = hover, tilt is compensated, attitude-command cyclic, and drag is computed in ground axes so pitching forward accelerates instead of sinking.
-  - `input.assist` (the "pilotaje asistido" setting, on by default) changes behaviour. Planes: roll keys move a held bank target (`bankHold`, 70°/s, ±75°) that stays when released (the owner wants the turn kept until the opposite key is pressed; a ±4° detent snaps to wings level), plus coordinated-turn feed-forward and stall protection. Helicopters (`arcadeHeli`): A/D move a held bank target too (`heliBank`, 45°/s, ±35°, ±3° detent, reset on the ground), as the owner wants the same feel as planes. W/S likewise set a held forward-speed target (`heliSpd`, 14 m/s per second, ±2 m/s detent). Braking stops at hover (`spdStop`), so going backwards needs a fresh press. The held bank slides the helicopter sideways below about 12 m/s forward and turns it above (coordinated turn ×3, no crab). In reverse it only slides. Q/E always yaw, and lateral velocity is damped so the path follows the nose. Assisted planes skip the bank-angle logic above 60° pitch, because Euler roll flips during loops.
+  - `input.assist` (the "pilotaje asistido" setting, on by default) changes behaviour. Planes: roll keys move a held bank target (`bankHold`, 70°/s, ±75°) that stays when released (the owner wants the turn kept until the opposite key is pressed; a ±4° detent snaps to wings level), plus coordinated-turn feed-forward and stall protection. Helicopters (`arcadeHeli`) are classic arcade, as the owner chose: W/S fly forwards/backwards only while held and brake to a hover on release, A/D yaw the nose at any speed with the path following it, and Q/E strafe sideways. Nothing is held: releasing the keys levels and stops the helicopter. Assisted planes skip the bank-angle logic above 60° pitch, because Euler roll flips during loops.
   - Ground contact handles crash rules and tire/skid friction.
 - `environment.js`: sky shader, sun and moon, stars, fog, instanced low-poly clouds plus an overcast layer, rain and snow, lightning, and wind. Weather presets are in `WEATHER`; transitions are interpolated.
 - `audio.js`: WebAudio-synthesized sounds only (no audio files). Initialized on the first user gesture.

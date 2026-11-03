@@ -7,7 +7,7 @@
   <meta name="description" content="Simulador y arcade de vuelo 3D en el navegador: F-14, F-16, F/A-18, A-10, Apache y LHX con estética low-poly retro, render moderno, combate aéreo y ataque a tierra.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=18">
+  <link rel="stylesheet" href="css/style.css?v=21">
   <script type="importmap">
   {
     "imports": {
@@ -80,6 +80,7 @@
       <div class="menu-links">
         <a href="#" data-win="win-help">Controles</a> · <a href="#" data-win="win-settings">Ajustes</a> · <kbd>Enter</kbd> para despegar
       </div>
+      <div class="version" data-version></div>
     </div>
 
     <!-- ficha de la aeronave sobre la vista 3D -->
@@ -149,9 +150,9 @@
         <tr><td>G · X · B</td><td>Tren · flaps · frenos/aerofreno (mantener) — <b>P</b> freno de mano</td></tr>
         <tr><th colspan="2">Helicóptero</th></tr>
         <tr><td>Shift / Ctrl · R / F</td><td>Colectivo (50 % = estacionario)</td></tr>
-        <tr><td>W / S</td><td>Más / menos velocidad de avance: se mantiene al soltar. S frena hasta quedarse quieto; pulsa otra vez para ir marcha atrás</td></tr>
-        <tr><td>A / D</td><td>Alabear: la inclinación se mantiene al soltar, pulsa el lado contrario para nivelar. En estacionario se desliza de lado; al avanzar, gira (pilotaje asistido)</td></tr>
-        <tr><td>Q / E</td><td>Pedales (girar sobre sí mismo)</td></tr>
+        <tr><td>W / S</td><td>Avanzar / retroceder (al soltar, frena hasta quedarse quieto)</td></tr>
+        <tr><td>A / D</td><td>Girar el morro a izquierda / derecha</td></tr>
+        <tr><td>Q / E</td><td>Desplazarse de lado a izquierda / derecha</td></tr>
         <tr><th colspan="2">Armas (modos de combate)</th></tr>
         <tr><td>Espacio · Z</td><td>Cañón · cohetes no guiados</td></tr>
         <tr><th colspan="2">Cámara</th></tr>
@@ -176,6 +177,7 @@
       <button id="btn-restart">Reiniciar vuelo</button>
       <button id="btn-settings2" data-win="win-settings">Ajustes</button>
       <button id="btn-mainmenu">Menú principal</button>
+      <div class="version" data-version></div>
     </div>
   </div>
 
@@ -191,6 +193,6 @@
 
   <div id="loading" class="overlay hidden"><div class="spinner"></div><div id="loading-text">Generando terreno…</div></div>
   <noscript>Este simulador necesita JavaScript y WebGL.</noscript>
-  <script type="module" src="js/main.js?v=18"></script>
+  <script type="module" src="js/main.js?v=21"></script>
 </body>
 </html>

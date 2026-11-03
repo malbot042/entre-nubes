@@ -1,20 +1,20 @@
 // Entre Nubes — bucle principal, cámaras, entrada, HUD y menús.
 import * as THREE from 'three';
-import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=18';
-import { buildModel } from './models.js?v=18';
-import { Cockpit } from './cockpit.js?v=18';
-import { FlightModel } from './physics.js?v=18';
-import { World, CHUNK } from './world.js?v=18';
-import { Environment, WEATHER } from './environment.js?v=18';
-import { AudioEngine } from './audio.js?v=18';
-import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=18';
-import { PostFX, CRT_CURVE } from './postfx.js?v=18';
-import { Particles } from './effects.js?v=18';
-import { Combat } from './combat.js?v=18';
-import { MODES, createMission, isCombat } from './missions.js?v=18';
-import { TacticalHUD } from './hud.js?v=18';
-import { NavMap } from './navmap.js?v=18';
-import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=18';
+import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=21';
+import { buildModel } from './models.js?v=21';
+import { Cockpit } from './cockpit.js?v=21';
+import { FlightModel } from './physics.js?v=21';
+import { World, CHUNK } from './world.js?v=21';
+import { Environment, WEATHER } from './environment.js?v=21';
+import { AudioEngine } from './audio.js?v=21';
+import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=21';
+import { PostFX, CRT_CURVE } from './postfx.js?v=21';
+import { Particles } from './effects.js?v=21';
+import { Combat } from './combat.js?v=21';
+import { MODES, createMission, isCombat } from './missions.js?v=21';
+import { TacticalHUD } from './hud.js?v=21';
+import { NavMap } from './navmap.js?v=21';
+import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=21';
 
 // ---------------- Ajustes persistentes ----------------
 const DEFAULTS = { aircraft: 'f16', time: '13', weather: 'clear', dist: 'medium', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, assist: true, edges: true, crt: true, best: {} };
@@ -100,7 +100,11 @@ const state = {
   gearWarned: false, mission: null,
 };
 const eyePivot = new THREE.Group();
-window.__entreNubes = { state, scene, camera, env, combat, particles, fx };
+// versión del juego: es el número de caché ?v=N con el que index.html carga este módulo
+const VERSION = 'v' + (new URL(import.meta.url).searchParams.get('v') || 'dev');
+for (const el of document.querySelectorAll('[data-version]')) el.textContent = `Entre Nubes ${VERSION}`;
+console.info(`Entre Nubes ${VERSION}`);
+window.__entreNubes = { state, scene, camera, env, combat, particles, fx, version: VERSION };
 const keys = new Set();
 const defPitch = () => (state.spec?.type === 'heli' ? -8 : -6) * DEG;
 
