@@ -1,6 +1,6 @@
 // Modelo de vuelo simplificado pero creíble para aviones y helicópteros.
 import * as THREE from 'three';
-import { clamp, lerp, smoothstep, DEG } from './util.js?v=15';
+import { clamp, lerp, smoothstep, DEG } from './util.js?v=18';
 
 const G = 9.81;
 const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _q = new THREE.Quaternion(), _qi = new THREE.Quaternion();
@@ -252,11 +252,20 @@ export class FlightModel {
     const airborne = !this.onGround || this.throttle > 0.52;
     const push = airborne ? -input.pitch : 0; // W = +1
     const A = 11, vmax = s.vmax;
-    // empuje y resistencia: velocidad terminal = vmax con W pulsada
-    let acc = push * (push > 0 ? A : A * 1.3) - A * (vf / vmax) * Math.abs(vf / vmax);
-    if (push === 0) acc -= vf * 0.35; // sin mando, el helicóptero se va parando suavemente
+    // W/S fijan una velocidad de avance que se mantiene al soltar, como el morro
+    // del avión (±2 m/s se ajusta a estacionario); el helicóptero acelera hacia ella
+    // Al frenar con S se queda en estacionario: para ir marcha atrás hay que soltar y volver a pulsar.
+    if (!airborne) this.heliSpd = 0;
+    else if (Math.abs(push) < 0.05) {
+      this.spdStop = false;
+      if (Math.abs(this.heliSpd) < 2) this.heliSpd = 0;
+    } else if (!this.spdStop) {
+      const prev = this.heliSpd || 0;
+      this.heliSpd = clamp(prev + push * 14 * dt, -12, vmax);
+      if (prev * this.heliSpd < 0 || (prev !== 0 && this.heliSpd === 0)) { this.heliSpd = 0; this.spdStop = true; }
+    }
+    const acc = clamp((this.heliSpd - vf) * 0.9, -A * 1.3, A);
     vf += acc * dt;
-    if (vf < -18) vf = -18;
     // A/D mueven un alabeo objetivo que se mantiene al soltar, como en los aviones
     // (pulsar el lado contrario lo devuelve; ±3° se ajusta a nivelado). Inclinado
     // en estacionario se desliza de lado; al avanzar, el alabeo se convierte en viraje.
@@ -266,7 +275,8 @@ export class FlightModel {
       if (Math.abs(input.roll) < 0.05 && Math.abs(this.heliBank) < 3 * DEG) this.heliBank = 0;
     }
     const bank = this.heliBank;
-    const spd = smoothstep(5, 40, Math.abs(vf));
+    // la mezcla deslizamiento/viraje termina pronto para no avanzar derrapando
+    const spd = smoothstep(2, 12, vf); // marcha atrás inclinado: se desliza, no gira
     const vrT = clamp(bank / (25 * DEG), -1.4, 1.4) * 14 * (1 - spd);
     vr += (vrT - vr) * (1 - Math.exp(-dt * (vrT ? 2.2 : 3.5)));
     // colectivo: 50 % = estacionario; 100 % sube a 11 m/s, 0 % baja a 6 m/s
@@ -274,14 +284,14 @@ export class FlightModel {
     const vyT = c >= 0 ? c * 2 * 11 : c * 2 * 6;
     let vy = this.vel.y - env.wind.y;
     vy += (vyT - vy) * Math.min(1, dt * 2.5);
-    // rumbo: pedales siempre; el alabeo mantenido gira en avance (viraje coordinado, ×2 arcade)
-    const turn = clamp(2 * G * Math.tan(bank) / Math.max(Math.abs(vf), 10), -0.7 * s.yaw * DEG, 0.7 * s.yaw * DEG);
+    // rumbo: pedales siempre; el alabeo mantenido gira en avance (viraje coordinado ×3 arcade)
+    const turn = clamp(3 * G * Math.tan(bank) / Math.max(Math.abs(vf), 12), -0.6 * s.yaw * DEG, 0.6 * s.yaw * DEG);
     const yawT = -(turn * spd + input.yaw * 0.8 * s.yaw * DEG);
     this.yawRate = (this.yawRate || 0) + (yawT - (this.yawRate || 0)) * Math.min(1, dt * 7);
     if (this.onGround && !airborne) this.yawRate *= 0.2;
     const newYaw = yaw + this.yawRate * dt;
-    // actitud visual: morro abajo al acelerar (máx. 10°), arriba al frenar; alabeo el mantenido
-    const pitchT = clamp(-push * 8 * DEG - (vf / vmax) * 3 * DEG + (push < 0 && vf > 2 ? 14 * DEG : 0), -12 * DEG, 12 * DEG);
+    // actitud visual: morro abajo al acelerar y en crucero, arriba al frenar; alabeo el mantenido
+    const pitchT = clamp(-(acc / A) * 9 * DEG - (vf / vmax) * 4 * DEG, -12 * DEG, 12 * DEG);
     const rollT = -bank;
     this.visPitch = lerp(this.visPitch || 0, this.onGround && !airborne ? 0 : pitchT, Math.min(1, dt * 4));
     this.visRoll = lerp(this.visRoll || 0, this.onGround && !airborne ? 0 : rollT, Math.min(1, dt * 4));

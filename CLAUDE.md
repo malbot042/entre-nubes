@@ -16,11 +16,11 @@ python3 -m http.server 8000   # then open http://localhost:8000
 
 There are no tests, linter or build. To verify changes, load the page in a browser and check the console. `window.__entreNubes` exposes `{ state, scene, camera, env }` for debugging (for example `state.fm` is the flight model and `state.world` the terrain).
 
-**Cache busting:** every local import carries `?v=N` (`from './world.js?v=15'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
+**Cache busting:** every local import carries `?v=N` (`from './world.js?v=18'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
 
 ```
-sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=15'#g" js/*.js
-sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=15\"#g" index.html
+sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=18'#g" js/*.js
+sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=18\"#g" index.html
 ```
 
 ## Architecture
@@ -29,7 +29,7 @@ sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=15\"#g" index.html
 
 Main loop per frame: input → fixed-step physics (`STEP = 1/120`, accumulated) → combat/mission update → physics events (`crash`, `touchdown`) → model animation → camera → `world.update` (chunk streaming with a time budget) → `env.update` → cockpit instrument redraw → HUD → audio → `fx.render` (post-processing) → tactical marker overlay.
 
-**HUD rule:** there is no separate exterior HUD design. In the cockpit, flight data lives in the aircraft's HUD (combiner canvas in `cockpit.js`, drawn by `instruments.fighterHUD` or `instruments.heliHUD`) and the instrument panels. In exterior views, `TacticalHUD.flightHUD` (`hud.js`) draws that same HUD into its own 512 px canvas and overlays it centred on screen. Its pitch ladder uses the camera's pixels-per-degree, and its gun reticle is suppressed because `draw()` already shows the lead reticle. Exterior views also show warnings, messages, the mission chip (which carries ammo/armour in combat) and the toolbar.
+**HUD rule:** there is no separate exterior HUD design. In the cockpit, flight data lives in the aircraft's HUD (combiner canvas in `cockpit.js`, drawn by `instruments.fighterHUD` or `instruments.heliHUD`) and the instrument panels. In exterior views, `TacticalHUD.flightHUD` (`hud.js`) draws that same HUD into its own 512 px canvas and overlays it centred on screen. Its pitch ladder uses the camera's pixels-per-degree, and its gun reticle is suppressed because `draw()` already shows the lead reticle. `TacticalHUD.mapOverlay` adds the cockpit moving map (`NavMap.draw`, redrawn at 15 Hz into its own canvas) in the bottom-right corner. Exterior views also show warnings, messages, the mission chip (which carries ammo/armour in combat) and the toolbar.
 
 **Cockpit zoom:** the mouse wheel in cockpit view does not change the FOV. It leans the eye toward where the pilot looks (`state.lean`, applied in `updateCamera`), so the HUD and screens grow while the outside view stays wide. The fighter HUD is conformal: `Cockpit.hudGeo(eye)` recomputes pixels-per-degree and the boresight point from the current eye position every redraw, so it stays aligned while leaning.
 
@@ -61,7 +61,7 @@ Main loop per frame: input → fixed-step physics (`STEP = 1/120`, accumulated) 
 - `physics.js`: `FlightModel`.
   - Planes use a lift/drag model with auto-trim toward level-flight angle of attack.
   - Helicopters are arcade-style: 50 % collective = hover, tilt is compensated, attitude-command cyclic, and drag is computed in ground axes so pitching forward accelerates instead of sinking.
-  - `input.assist` (the "pilotaje asistido" setting, on by default) changes behaviour. Planes: roll keys move a held bank target (`bankHold`, 70°/s, ±75°) that stays when released (the owner wants the turn kept until the opposite key is pressed; a ±4° detent snaps to wings level), plus coordinated-turn feed-forward and stall protection. Helicopters (`arcadeHeli`): A/D move a held bank target too (`heliBank`, 45°/s, ±35°, ±3° detent, reset on the ground), as the owner wants the same feel as planes. The held bank slides the helicopter sideways at hover and turns it (coordinated turn ×2) as forward speed builds. Q/E always yaw, and lateral velocity is damped so the path follows the nose. Assisted planes skip the bank-angle logic above 60° pitch, because Euler roll flips during loops.
+  - `input.assist` (the "pilotaje asistido" setting, on by default) changes behaviour. Planes: roll keys move a held bank target (`bankHold`, 70°/s, ±75°) that stays when released (the owner wants the turn kept until the opposite key is pressed; a ±4° detent snaps to wings level), plus coordinated-turn feed-forward and stall protection. Helicopters (`arcadeHeli`): A/D move a held bank target too (`heliBank`, 45°/s, ±35°, ±3° detent, reset on the ground), as the owner wants the same feel as planes. W/S likewise set a held forward-speed target (`heliSpd`, 14 m/s per second, ±2 m/s detent). Braking stops at hover (`spdStop`), so going backwards needs a fresh press. The held bank slides the helicopter sideways below about 12 m/s forward and turns it above (coordinated turn ×3, no crab). In reverse it only slides. Q/E always yaw, and lateral velocity is damped so the path follows the nose. Assisted planes skip the bank-angle logic above 60° pitch, because Euler roll flips during loops.
   - Ground contact handles crash rules and tire/skid friction.
 - `environment.js`: sky shader, sun and moon, stars, fog, instanced low-poly clouds plus an overcast layer, rain and snow, lightning, and wind. Weather presets are in `WEATHER`; transitions are interpolated.
 - `audio.js`: WebAudio-synthesized sounds only (no audio files). Initialized on the first user gesture.

@@ -1,7 +1,7 @@
 // HUD táctico sobre el canvas 3D: retícula, marcadores, adelanto de tiro y flechas fuera de pantalla.
 import * as THREE from 'three';
-import { BULLET_SPEED } from './combat.js?v=15';
-import * as I from './instruments.js?v=15';
+import { BULLET_SPEED } from './combat.js?v=18';
+import * as I from './instruments.js?v=18';
 
 const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _f = new THREE.Vector3();
 const CY = '#3df2ff', RD = '#ff4a3c', AM = '#ffc14d';
@@ -15,6 +15,10 @@ export class TacticalHUD {
     this.fcv = document.createElement('canvas'); this.fcv.width = this.fcv.height = 512;
     this.fg = this.fcv.getContext('2d');
     this.fTimer = 0; this.fGeo = { ppd: 1, bx: 256, by: 256 };
+    // mapa móvil para las vistas exteriores (el mismo de las pantallas de cabina)
+    this.mcv = document.createElement('canvas'); this.mcv.width = this.mcv.height = 400;
+    this.mg = this.mcv.getContext('2d');
+    this.mTimer = 0;
     this.resize();
   }
   resize() { this.cv.width = innerWidth; this.cv.height = innerHeight; this.W = innerWidth; this.H = innerHeight; }
@@ -52,6 +56,24 @@ export class TacticalHUD {
     g.save();
     g.shadowColor = 'rgba(0,20,0,0.75)'; g.shadowBlur = 4;
     g.drawImage(this.fcv, (this.W - size) / 2, (this.H - size) / 2, size, size);
+    g.restore();
+  }
+
+  // mapa en la esquina inferior derecha, redibujado a 15 Hz en su propio canvas
+  mapOverlay(dt, s, navMap) {
+    this.mTimer -= dt;
+    if (this.mTimer <= 0) {
+      this.mTimer = 1 / 15;
+      I.screen(this.mg, 0, 0, 400, 400, null, () => navMap.draw(this.mg, 0, 0, 400, 400, s, s.pos, s.heli ? 5000 : 12000));
+    }
+    const g = this.g, size = Math.round(Math.min(this.H * 0.36, this.W * 0.3));
+    const x = this.W - size - Math.max(28, this.W * 0.03), y = this.H - size - Math.max(28, this.H * 0.05);
+    g.save();
+    g.beginPath(); g.roundRect(x, y, size, size, 10);
+    g.shadowColor = 'rgba(0,0,0,0.5)'; g.shadowBlur = 12; g.fillStyle = '#000'; g.fill();
+    g.shadowBlur = 0; g.clip();
+    g.globalAlpha = 0.94; g.drawImage(this.mcv, x, y, size, size);
+    g.globalAlpha = 1; g.lineWidth = 2; g.strokeStyle = 'rgba(98,255,134,0.45)'; g.stroke();
     g.restore();
   }
 

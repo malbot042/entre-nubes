@@ -1,20 +1,20 @@
 // Entre Nubes — bucle principal, cámaras, entrada, HUD y menús.
 import * as THREE from 'three';
-import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=15';
-import { buildModel } from './models.js?v=15';
-import { Cockpit } from './cockpit.js?v=15';
-import { FlightModel } from './physics.js?v=15';
-import { World, CHUNK } from './world.js?v=15';
-import { Environment, WEATHER } from './environment.js?v=15';
-import { AudioEngine } from './audio.js?v=15';
-import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=15';
-import { PostFX, CRT_CURVE } from './postfx.js?v=15';
-import { Particles } from './effects.js?v=15';
-import { Combat } from './combat.js?v=15';
-import { MODES, createMission, isCombat } from './missions.js?v=15';
-import { TacticalHUD } from './hud.js?v=15';
-import { NavMap } from './navmap.js?v=15';
-import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=15';
+import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=18';
+import { buildModel } from './models.js?v=18';
+import { Cockpit } from './cockpit.js?v=18';
+import { FlightModel } from './physics.js?v=18';
+import { World, CHUNK } from './world.js?v=18';
+import { Environment, WEATHER } from './environment.js?v=18';
+import { AudioEngine } from './audio.js?v=18';
+import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=18';
+import { PostFX, CRT_CURVE } from './postfx.js?v=18';
+import { Particles } from './effects.js?v=18';
+import { Combat } from './combat.js?v=18';
+import { MODES, createMission, isCombat } from './missions.js?v=18';
+import { TacticalHUD } from './hud.js?v=18';
+import { NavMap } from './navmap.js?v=18';
+import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=18';
 
 // ---------------- Ajustes persistentes ----------------
 const DEFAULTS = { aircraft: 'f16', time: '13', weather: 'clear', dist: 'medium', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, assist: true, edges: true, crt: true, best: {} };
@@ -939,8 +939,11 @@ function loop() {
     // en cabina la retícula la pone el HUD del avión: aquí solo marcadores
     tacHud.draw(camera, { fm, markers: m.markers(), armed: !!pl && !!state.spec.arms && state.cam !== 'cockpit', hitFlash: pl?.hitFlash || 0, ammoEmpty: !!pl && pl.ammo <= 0 });
   } else tacHud.clear();
-  // fuera de la cabina se ve el HUD del avión superpuesto
-  if (state.cam !== 'cockpit' && !fm.crashed) tacHud.flightHUD(dt, inst, camera);
+  // fuera de la cabina se ven el HUD del avión y el mapa móvil superpuestos
+  if (state.cam !== 'cockpit' && !fm.crashed) {
+    tacHud.flightHUD(dt, inst, camera);
+    tacHud.mapOverlay(dt, inst, state.navMap);
+  }
 }
 
 function checkArrival() {
