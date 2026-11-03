@@ -371,29 +371,6 @@ export function eicas(g, x, y, w, h, s, engines = 2) {
   g.restore();
 }
 
-export function mapDisplay(g, x, y, w, h, s, mapCanvas) {
-  g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip();
-  g.fillStyle = '#000'; g.fillRect(x, y, w, h);
-  if (mapCanvas) g.drawImage(mapCanvas, x, y, w, h);
-  g.strokeStyle = '#2f2'; g.lineWidth = 2; g.strokeRect(x + 1, y + 1, w - 2, h - 2);
-  g.fillStyle = '#2f2'; g.font = `${h * 0.06}px monospace`; g.textAlign = 'left';
-  g.fillText('MAP', x + 6, y + h * 0.08);
-  g.restore();
-}
-
-export function mfdFrame(g, x, y, w, h, labels = ['TGT', 'HSI', 'SMS', 'FCR', 'DTE']) {
-  g.fillStyle = '#26282a'; g.fillRect(x - 14, y - 14, w + 28, h + 28);
-  g.fillStyle = '#3a3c3f';
-  for (let i = 0; i < 5; i++) {
-    const bx = x + (i + 0.5) * w / 5 - 9;
-    g.fillRect(bx, y - 12, 18, 9); g.fillRect(bx, y + h + 3, 18, 9);
-    const by = y + (i + 0.5) * h / 5 - 5;
-    g.fillRect(x - 12, by, 9, 18); g.fillRect(x + w + 3, by, 9, 18);
-  }
-  g.fillStyle = '#2f2'; g.font = '10px monospace'; g.textAlign = 'center';
-  labels.forEach((l, i) => g.fillText(l, x + (i + 0.5) * w / 5, y + h - 4));
-}
-
 export function ufc(g, x, y, w, h, s) {
   g.fillStyle = '#1d1f21'; g.fillRect(x, y, w, h);
   g.fillStyle = '#000'; g.fillRect(x + w * 0.1, y + h * 0.08, w * 0.8, h * 0.2);
@@ -419,63 +396,231 @@ export function warnPanel(g, x, y, w, h, s) {
   });
 }
 
-// HUD de caza (verde, fondo transparente)
-export function fighterHUD(g, W, H, s) {
-  g.clearRect(0, 0, W, H);
-  const col = 'rgba(80,255,120,1)';
-  g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 3;
-  g.font = 'bold 22px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  const cx = W / 2, cy = H * 0.5, ppd = H / 30;
-  // escalera de cabeceo
-  g.save(); g.beginPath(); g.rect(W * 0.12, H * 0.12, W * 0.76, H * 0.76); g.clip();
-  g.translate(cx, cy); g.rotate(-s.roll * Math.PI / 180);
-  for (let p = -90; p <= 90; p += 5) {
-    const yy = (s.pitch - p) * ppd;
-    if (Math.abs(yy) > H * 0.6) continue;
-    const w = p === 0 ? W * 0.7 : W * 0.25;
-    g.setLineDash(p < 0 ? [8, 6] : []);
-    g.beginPath(); g.moveTo(-w / 2, yy); g.lineTo(-W * 0.07, yy); g.moveTo(W * 0.07, yy); g.lineTo(w / 2, yy); g.stroke();
-    if (p !== 0) {
-      g.beginPath(); g.moveTo(-w / 2, yy); g.lineTo(-w / 2, yy + (p > 0 ? 8 : -8)); g.moveTo(w / 2, yy); g.lineTo(w / 2, yy + (p > 0 ? 8 : -8)); g.stroke();
-      g.fillText(Math.abs(p), -w / 2 - 22, yy); g.fillText(Math.abs(p), w / 2 + 22, yy);
-    }
+// ---------- Pantallas multifunción ----------
+// Contenido de la pantalla recortado, etiquetas de los botones (OSB) en el
+// borde y viñeta de cristal. El marco y los botones son geometría (cockpit.js).
+export function screen(g, x, y, w, h, osb, draw) {
+  g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip();
+  g.fillStyle = '#000'; g.fillRect(x, y, w, h);
+  draw();
+  if (osb) {
+    g.font = `bold ${Math.round(h * 0.04)}px "Share Tech Mono", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    osb.forEach((l, i) => {
+      if (!l) return;
+      const lx = x + (i + 0.5) * w / osb.length, ly = y + h - h * 0.035;
+      const tw = g.measureText(l).width + 8;
+      const active = i === 0;
+      g.fillStyle = active ? '#2f2' : 'rgba(0,0,0,0.6)'; g.fillRect(lx - tw / 2, ly - h * 0.025, tw, h * 0.05);
+      g.fillStyle = active ? '#000' : '#2f2'; g.fillText(l, lx, ly + 1);
+    });
   }
-  g.setLineDash([]);
+  const vg = g.createRadialGradient(x + w / 2, y + h / 2, Math.min(w, h) * 0.35, x + w / 2, y + h / 2, Math.max(w, h) * 0.75);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.45)');
+  g.fillStyle = vg; g.fillRect(x, y, w, h);
   g.restore();
-  // marcador de trayectoria (FPM)
-  const fx = cx + s.beta * ppd, fy = cy + s.aoa * ppd;
-  g.beginPath(); g.arc(fx, fy, 9, 0, Math.PI * 2); g.stroke();
-  g.beginPath(); g.moveTo(fx - 22, fy); g.lineTo(fx - 9, fy); g.moveTo(fx + 9, fy); g.lineTo(fx + 22, fy); g.moveTo(fx, fy - 9); g.lineTo(fx, fy - 18); g.stroke();
-  // cruz de mira
-  g.beginPath(); g.moveTo(cx - 10, cy - H * 0.2); g.lineTo(cx + 10, cy - H * 0.2); g.moveTo(cx, cy - H * 0.2 - 10); g.lineTo(cx, cy - H * 0.2 + 10); g.stroke();
-  // velocidad y altitud
-  g.strokeRect(W * 0.05, cy - 16, 90, 32); g.fillText(Math.round(s.ias), W * 0.05 + 45, cy);
-  g.strokeRect(W * 0.95 - 100, cy - 16, 100, 32); g.fillText(Math.round(s.alt), W * 0.95 - 50, cy);
-  g.font = 'bold 16px monospace';
-  g.fillText(`M ${s.mach.toFixed(2)}`, W * 0.05 + 45, cy + 40);
-  g.fillText(`G ${s.g.toFixed(1)}`, W * 0.05 + 45, cy - 40);
-  g.fillText(`α ${s.aoa.toFixed(1)}`, W * 0.05 + 45, cy + 64);
-  g.fillText(`${s.vs > 0 ? '+' : ''}${Math.round(s.vs)}`, W * 0.95 - 50, cy + 40);
-  // cinta de rumbo
-  for (let a = Math.floor((s.hdg - 20) / 5) * 5; a <= s.hdg + 20; a += 5) {
-    const xx = cx + (a - s.hdg) * (W * 0.5 / 40);
-    g.beginPath(); g.moveTo(xx, H * 0.06); g.lineTo(xx, H * 0.06 + (a % 10 === 0 ? 12 : 6)); g.stroke();
-    if (a % 10 === 0) g.fillText(String(((a % 360) + 360) % 360 / 10 | 0).padStart(2, '0'), xx, H * 0.06 + 26);
+}
+
+// ---------- HUD ----------
+const DEG = Math.PI / 180;
+const HUDC = '#62ff86';
+const hudFont = (g, px) => { g.font = `bold ${px}px "Share Tech Mono", monospace`; };
+const pad3 = (v) => String(Math.round(((v % 360) + 360) % 360)).padStart(3, '0');
+
+function boxText(g, t, x, y, w, h) {
+  g.strokeRect(x - w / 2, y - h / 2, w, h);
+  g.fillText(t, x, y + 1);
+}
+
+// cinta de rumbo en la parte superior
+function hdgTape(g, W, H, s, y0) {
+  const span = 30, ppx = W * 0.5 / span, cx = W / 2;
+  g.save(); g.beginPath(); g.rect(cx - W * 0.25 - 4, y0 - 34, W * 0.5 + 8, 60); g.clip();
+  hudFont(g, 17);
+  for (let a = Math.floor((s.hdg - span / 2) / 5) * 5; a <= s.hdg + span / 2; a += 5) {
+    const xx = cx + (a - s.hdg) * ppx;
+    g.beginPath(); g.moveTo(xx, y0); g.lineTo(xx, y0 - (a % 10 === 0 ? 11 : 6)); g.stroke();
+    if (a % 10 === 0) g.fillText(String(((a % 360) + 360) % 360 / 10 | 0).padStart(2, '0'), xx, y0 - 22);
   }
-  g.beginPath(); g.moveTo(cx, H * 0.06 - 2); g.lineTo(cx - 6, H * 0.06 - 12); g.lineTo(cx + 6, H * 0.06 - 12); g.closePath(); g.fill();
-  // destino
+  g.restore();
+  // marca del destino
   if (s.destBrg != null) {
     const rel = ((s.destBrg - s.hdg + 540) % 360) - 180;
-    const xx = cx + Math.max(-1, Math.min(1, rel / 20)) * W * 0.25;
-    g.fillRect(xx - 4, H * 0.06 + 34, 8, 8);
-    g.fillText(`${s.destDist.toFixed(1)} KM`, W * 0.95 - 50, H * 0.88);
+    const xx = cx + Math.max(-span / 2, Math.min(span / 2, rel)) * ppx;
+    g.beginPath(); g.moveTo(xx - 6, y0 + 2); g.lineTo(xx - 6, y0 + 9); g.lineTo(xx + 6, y0 + 9); g.lineTo(xx + 6, y0 + 2);
+    if (Math.abs(rel) < span / 2) g.fill(); g.stroke();
   }
-  g.fillText(`${s.heli ? 'COL' : 'THR'} ${Math.round(s.throttle * 100)}${s.ab ? ' AB' : ''}`, W * 0.05 + 45, H * 0.88);
+  hudFont(g, 19);
+  g.beginPath(); g.moveTo(cx, y0 + 12); g.lineTo(cx - 6, y0 + 20); g.lineTo(cx + 6, y0 + 20); g.closePath(); g.fill();
+  boxText(g, pad3(s.hdg), cx, y0 + 34, 52, 24);
+}
+
+// cinta vertical (velocidad a la izquierda, altitud a la derecha)
+function vTape(g, x, cy, hgt, val, step, labelEvery, ppu, right, fmt) {
+  const dir = right ? 1 : -1;
+  g.save(); g.beginPath(); g.rect(x - 70, cy - hgt / 2, 140, hgt); g.clip();
+  g.beginPath(); g.moveTo(x, cy - hgt / 2); g.lineTo(x, cy + hgt / 2); g.stroke();
+  hudFont(g, 15); g.textAlign = right ? 'left' : 'right';
+  const range = hgt / 2 / ppu;
+  for (let v = Math.ceil((val - range) / step) * step; v <= val + range; v += step) {
+    if (v < 0) continue;
+    const yy = cy - (v - val) * ppu, major = v % labelEvery === 0;
+    g.beginPath(); g.moveTo(x, yy); g.lineTo(x + dir * (major ? 12 : 6), yy); g.stroke();
+    if (major && Math.abs(yy - cy) > 16) g.fillText(fmt(v), x + dir * 16, yy);
+  }
+  g.restore();
+  // valor actual en caja con flecha
+  hudFont(g, 21); g.textAlign = 'center';
+  const bw = 78, bx = x + dir * (bw / 2 + 12);
+  g.beginPath();
+  g.moveTo(x + dir * 4, cy); g.lineTo(x + dir * 12, cy - 13); g.lineTo(x + dir * (bw + 12), cy - 13);
+  g.lineTo(x + dir * (bw + 12), cy + 13); g.lineTo(x + dir * 12, cy + 13); g.closePath();
+  g.fillStyle = 'rgba(0,0,0,0)'; g.stroke(); g.fillStyle = HUDC;
+  g.fillText(String(Math.round(val)), bx, cy + 1);
+}
+
+function hudFooter(g, W, H, s) {
+  hudFont(g, 17); g.textAlign = 'center';
+  if (s.destBrg != null) {
+    let t = `${s.destName}  ${s.destDist.toFixed(1)} KM`;
+    const gsMs = s.gs / 1.94384;
+    if (gsMs > 15) { const sec = s.destDist * 1000 / gsMs; t += `  ${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`; }
+    g.fillText(t, W / 2, H * 0.955);
+  }
   if (s.armed) {
-    g.fillText(`GUN ${s.ammo}`, cx - W * 0.16, H * 0.94);
-    g.fillText(`RKT ${s.rockets}`, cx + W * 0.16, H * 0.94);
-    g.fillRect(cx - W * 0.1, H * 0.975, W * 0.2 * s.hp, 4);
+    hudFont(g, 16);
+    g.fillText(`GUN ${s.ammo}`, W * 0.3, H * 0.9);
+    g.fillText(`RKT ${s.rockets}`, W * 0.7, H * 0.9);
+    g.strokeRect(W * 0.42, H * 0.893, W * 0.16, 8);
+    g.fillRect(W * 0.42, H * 0.893, W * 0.16 * Math.max(0, s.hp), 8);
   }
-  if (s.gearDown) g.fillText('GEAR', cx, H * 0.82);
-  if (s.stall) { g.font = 'bold 26px monospace'; g.fillText('STALL', cx, H * 0.7); }
+  if (s.warn && (performance.now() / 300 | 0) % 2 === 0) {
+    hudFont(g, 30); g.fillText(s.warn, W / 2, H * 0.7);
+  }
+}
+
+// HUD de caza: escalera de cabeceo y marcador de trayectoria conformes
+// (geo.ppd píxeles por grado, geo.by = fila del eje del avión).
+export function fighterHUD(g, W, H, s, geo) {
+  g.clearRect(0, 0, W, H);
+  g.strokeStyle = HUDC; g.fillStyle = HUDC; g.lineWidth = 2.5; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  const ppd = geo.ppd, bx = geo.bx, by = geo.by, cy = H * 0.5;
+  // escalera de cabeceo
+  g.save(); g.beginPath(); g.rect(W * 0.24, H * 0.2, W * 0.52, H * 0.62); g.clip();
+  g.translate(bx, by); g.rotate(-s.roll * DEG);
+  hudFont(g, 16);
+  for (let p = -90; p <= 90; p += 5) {
+    const yy = (s.pitch - p) * ppd;
+    if (Math.abs(yy) > H) continue;
+    if (p === 0) {
+      g.beginPath(); g.moveTo(-W * 0.5, yy); g.lineTo(-W * 0.07, yy); g.moveTo(W * 0.07, yy); g.lineTo(W * 0.5, yy); g.stroke();
+      continue;
+    }
+    const half = W * 0.15, gap = W * 0.05, tick = p > 0 ? 10 : -10;
+    g.setLineDash(p < 0 ? [9, 7] : []);
+    g.beginPath(); g.moveTo(-half, yy + tick); g.lineTo(-half, yy); g.lineTo(-gap, yy); g.moveTo(gap, yy); g.lineTo(half, yy); g.lineTo(half, yy + tick); g.stroke();
+    g.setLineDash([]);
+    g.fillText(Math.abs(p), -half - 18, yy); g.fillText(Math.abs(p), half + 18, yy);
+  }
+  g.restore();
+  // símbolo del eje (W)
+  g.beginPath();
+  g.moveTo(bx - 26, by); g.lineTo(bx - 13, by); g.lineTo(bx - 7, by + 8); g.lineTo(bx, by); g.lineTo(bx + 7, by + 8); g.lineTo(bx + 13, by); g.lineTo(bx + 26, by);
+  g.stroke();
+  // marcador de trayectoria (FPM)
+  const fx = Math.max(W * 0.25, Math.min(W * 0.75, bx + s.beta * ppd));
+  const fy = Math.max(H * 0.2, Math.min(H * 0.8, by + s.aoa * ppd));
+  g.beginPath(); g.arc(fx, fy, 8, 0, Math.PI * 2); g.stroke();
+  g.beginPath(); g.moveTo(fx - 22, fy); g.lineTo(fx - 8, fy); g.moveTo(fx + 8, fy); g.lineTo(fx + 22, fy); g.moveTo(fx, fy - 8); g.lineTo(fx, fy - 17); g.stroke();
+  // retícula del cañón
+  if (s.armed) {
+    g.beginPath(); g.arc(bx, by + 2 * ppd, 24, 0, Math.PI * 2); g.stroke();
+    g.fillRect(bx - 2, by + 2 * ppd - 2, 4, 4);
+  }
+  // escala de alabeo
+  const bc = by, br = H * 0.36;
+  for (const a of [-60, -45, -30, -20, -10, 0, 10, 20, 30, 45, 60]) {
+    const ra = (90 + a) * DEG, l = a % 30 === 0 ? 12 : 7;
+    g.beginPath(); g.moveTo(bx + Math.cos(ra) * br, bc + Math.sin(ra) * br); g.lineTo(bx + Math.cos(ra) * (br + l), bc + Math.sin(ra) * (br + l)); g.stroke();
+  }
+  const rr = (90 - Math.max(-65, Math.min(65, s.roll))) * DEG;
+  g.save(); g.translate(bx + Math.cos(rr) * (br - 3), bc + Math.sin(rr) * (br - 3)); g.rotate(rr - Math.PI / 2);
+  g.beginPath(); g.moveTo(0, 0); g.lineTo(-6, -10); g.lineTo(6, -10); g.closePath(); g.fill();
+  g.restore();
+  // cintas
+  hdgTape(g, W, H, s, H * 0.1);
+  vTape(g, W * 0.21, cy, H * 0.42, s.ias, 10, 50, H * 0.42 / 120, false, v => v);
+  vTape(g, W * 0.79, cy, H * 0.42, s.alt, 100, 500, H * 0.42 / 1200, true, v => v >= 1000 ? (v / 1000).toFixed(1) + 'K' : v);
+  // datos laterales
+  hudFont(g, 17); g.textAlign = 'left';
+  g.fillText(`M ${s.mach.toFixed(2)}`, W * 0.04, cy + H * 0.27);
+  g.fillText(`G ${s.g.toFixed(1)}`, W * 0.04, cy + H * 0.31);
+  g.fillText(`α ${s.aoa.toFixed(1)}`, W * 0.04, cy + H * 0.35);
+  g.fillText(`${s.heli ? 'COL' : 'THR'} ${Math.round(s.throttle * 100)}${s.ab ? ' AB' : ''}`, W * 0.04, cy - H * 0.27);
+  g.textAlign = 'right';
+  g.fillText(`${s.vs > 0 ? '+' : ''}${Math.round(s.vs)}`, W * 0.96, cy + H * 0.27);
+  if (s.agl < 5000) g.fillText(`R ${Math.round(s.agl)}`, W * 0.96, cy + H * 0.31);
+  if (s.gearDown) g.fillText('GEAR', W * 0.96, cy - H * 0.27);
+  if (s.brakes) g.fillText('BRK', W * 0.96, cy - H * 0.23);
+  hudFooter(g, W, H, s);
+}
+
+// HUD de helicóptero: no conforme, orientado al vuelo estacionario
+// (vector de velocidad horizontal, radioaltímetro con barra, par motor).
+export function heliHUD(g, W, H, s) {
+  g.clearRect(0, 0, W, H);
+  g.strokeStyle = HUDC; g.fillStyle = HUDC; g.lineWidth = 2.5; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  const cx = W / 2, cy = H * 0.5, ppd = H / 70;
+  // horizonte comprimido
+  g.save(); g.beginPath(); g.rect(W * 0.2, H * 0.22, W * 0.6, H * 0.56); g.clip();
+  g.translate(cx, cy); g.rotate(-s.roll * DEG);
+  const off = s.pitch * ppd;
+  g.beginPath(); g.moveTo(-W * 0.4, off); g.lineTo(-W * 0.06, off); g.moveTo(W * 0.06, off); g.lineTo(W * 0.4, off); g.stroke();
+  hudFont(g, 14);
+  for (const p of [-20, -10, 10, 20]) {
+    const yy = off - p * ppd;
+    g.setLineDash(p < 0 ? [6, 6] : []);
+    g.beginPath(); g.moveTo(-W * 0.12, yy); g.lineTo(-W * 0.06, yy); g.moveTo(W * 0.06, yy); g.lineTo(W * 0.12, yy); g.stroke();
+    g.setLineDash([]);
+    g.fillText(Math.abs(p), W * 0.15, yy);
+  }
+  g.restore();
+  // referencia fija
+  g.beginPath(); g.moveTo(cx - 20, cy); g.lineTo(cx - 7, cy); g.moveTo(cx + 7, cy); g.lineTo(cx + 20, cy); g.moveTo(cx, cy - 7); g.lineTo(cx, cy - 16); g.stroke();
+  g.beginPath(); g.arc(cx, cy, 4, 0, Math.PI * 2); g.stroke();
+  // vector de velocidad horizontal (adelante = arriba): clave para el estacionario
+  const kv = H * 0.22 / 30;
+  let vx = s.velR * kv, vy = -s.velF * kv;
+  const vl = Math.hypot(vx, vy), vmax = H * 0.24;
+  if (vl > vmax) { vx *= vmax / vl; vy *= vmax / vl; }
+  g.lineWidth = 3;
+  g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + vx, cy + vy); g.stroke();
+  g.beginPath(); g.arc(cx + vx, cy + vy, 6, 0, Math.PI * 2); g.stroke();
+  g.lineWidth = 2.5;
+  g.setLineDash([4, 6]); g.beginPath(); g.arc(cx, cy, H * 0.22 * 10 / 30, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
+  // rumbo
+  hdgTape(g, W, H, s, H * 0.1);
+  // velocidad y par
+  hudFont(g, 24);
+  boxText(g, String(Math.round(s.ias)), W * 0.14, cy, 74, 32);
+  hudFont(g, 15); g.fillText('KT', W * 0.14, cy + 28);
+  hudFont(g, 19); g.textAlign = 'left';
+  g.fillText(`TRQ ${Math.round(s.throttle * 100)}%`, W * 0.05, cy - H * 0.2);
+  g.fillText(`GS ${Math.round(s.gs)}`, W * 0.05, cy + H * 0.2);
+  // radioaltímetro: barra analógica 0–200 ft y valor
+  const rx = W * 0.9, top = cy - H * 0.2, bot = cy + H * 0.2;
+  g.strokeRect(rx - 6, top, 12, bot - top);
+  for (let f = 0; f <= 200; f += 50) { const yy = bot - f / 200 * (bot - top); g.beginPath(); g.moveTo(rx - 14, yy); g.lineTo(rx - 6, yy); g.stroke(); }
+  const ag = Math.max(0, Math.min(200, s.agl));
+  g.fillRect(rx - 6, bot - ag / 200 * (bot - top), 12, ag / 200 * (bot - top));
+  // velocidad vertical: flecha junto a la barra
+  const vyy = cy - Math.max(-1, Math.min(1, s.vs / 1000)) * H * 0.2;
+  g.beginPath(); g.moveTo(rx + 10, vyy); g.lineTo(rx + 20, vyy - 7); g.lineTo(rx + 20, vyy + 7); g.closePath(); g.fill();
+  hudFont(g, 22); g.textAlign = 'center';
+  boxText(g, s.agl < 1500 ? String(Math.round(s.agl)) : '---', W * 0.77, cy, 70, 30);
+  hudFont(g, 15); g.fillText(`${s.vs > 0 ? '+' : ''}${Math.round(s.vs)}`, W * 0.77, cy + 28);
+  hudFont(g, 15); g.fillText('ALT ' + Math.round(s.alt), W * 0.77, cy - 28);
+  if (s.gearDown) { hudFont(g, 17); g.fillText('GEAR', cx, H * 0.84); }
+  hudFooter(g, W, H, s);
 }

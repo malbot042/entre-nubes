@@ -7,7 +7,7 @@
   <meta name="description" content="Simulador y arcade de vuelo 3D en el navegador: F-14, F-16, F/A-18, A-10, Apache y LHX con estética low-poly retro, render moderno, combate aéreo y ataque a tierra.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=9">
+  <link rel="stylesheet" href="css/style.css?v=11">
   <script type="importmap">
   {
     "imports": {
@@ -21,38 +21,9 @@
   <canvas id="game"></canvas>
   <canvas id="hud-canvas"></canvas>
 
-  <!-- ================= HUD (exterior: versión compacta; en cabina manda el HUD del avión) ================= -->
+  <!-- ================= Capa de interfaz en vuelo (los datos de vuelo van en el HUD de la cabina) ================= -->
   <div id="hud" class="hidden">
     <div id="hud-mission" class="chip hidden"></div>
-    <div id="hud-bar" class="glass">
-      <div class="cell"><span class="lbl">VEL</span><b id="h-spd">0</b><i id="u-spd">kt</i></div>
-      <div class="cell"><span class="lbl">ALT</span><b id="h-alt">0</b><i id="u-alt">ft</i></div>
-      <div class="cell"><span class="lbl">RUMBO</span><b id="h-hdg">000</b><i>°</i></div>
-      <div class="cell thr">
-        <span class="lbl" id="lbl-thr">POT.</span>
-        <div class="bar"><div id="h-thr"></div><div id="h-rpm"></div></div>
-        <b id="h-thr-v">0%</b>
-      </div>
-      <div class="chips">
-        <span class="ind" id="i-gear">TREN</span>
-        <span class="ind" id="i-flaps">FLAPS</span>
-        <span class="ind" id="i-brake">FRENO</span>
-        <span class="ind" id="i-ab">PC</span>
-      </div>
-      <div class="cell nav">
-        <span class="lbl" id="dest-title">DESTINO</span>
-        <b id="h-dist">0</b><i>km</i>
-        <span id="h-arrow">➤</span>
-        <span id="h-dest" class="dest"></span>
-      </div>
-      <div class="cell arms hidden" id="hud-arms">
-        <div class="hpbar" title="Blindaje"><div id="h-hp"></div></div>
-        <span class="lbl">CAÑ</span><b id="h-ammo">0</b>
-        <span class="lbl">COH</span><b id="h-rockets">0</b>
-        <span class="lbl">PTS</span><b id="h-score">0</b>
-      </div>
-    </div>
-    <div id="minimap-wrap" class="glass"><canvas id="minimap" width="200" height="200"></canvas></div>
     <div id="toolbar">
       <button id="btn-cam" title="Cámara (C)">◉</button>
       <button data-win="win-weather" title="Clima y hora (T)">☁</button>
@@ -144,8 +115,7 @@
         <label class="switch"><input type="checkbox" id="set-fuel" checked><span></span> Combustible infinito</label>
       </div>
       <div class="group">
-        <div class="group-title">Interfaz y sonido</div>
-        <label class="switch"><input type="checkbox" id="set-hud" checked><span></span> HUD en vista exterior</label>
+        <div class="group-title">Unidades y sonido</div>
         <label>Unidades
           <select id="set-units"><option value="aviation">Aviación · kt / ft</option><option value="metric">Métricas · km/h / m</option></select>
         </label>
@@ -185,7 +155,7 @@
         <tr><td>Espacio · Z</td><td>Cañón · cohetes no guiados</td></tr>
         <tr><th colspan="2">Cámara</th></tr>
         <tr><td>C</td><td>Cabina / exterior / pasada</td></tr>
-        <tr><td>Arrastrar ratón · rueda</td><td>Mirar alrededor · zoom</td></tr>
+        <tr><td>Arrastrar ratón · rueda</td><td>Mirar alrededor · en cabina, acercarse al HUD y a las pantallas; fuera, distancia de la cámara</td></tr>
         <tr><td>V / doble clic</td><td>Centrar la vista</td></tr>
         <tr><td>Teclado numérico</td><td>Vistas rápidas (4 6 8 2 5)</td></tr>
         <tr><th colspan="2">General</th></tr>
@@ -220,6 +190,6 @@
 
   <div id="loading" class="overlay hidden"><div class="spinner"></div><div id="loading-text">Generando terreno…</div></div>
   <noscript>Este simulador necesita JavaScript y WebGL.</noscript>
-  <script type="module" src="js/main.js?v=9"></script>
+  <script type="module" src="js/main.js?v=11"></script>
 </body>
 </html>

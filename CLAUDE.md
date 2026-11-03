@@ -16,20 +16,22 @@ python3 -m http.server 8000   # then open http://localhost:8000
 
 There are no tests, linter or build. To verify changes, load the page in a browser and check the console. `window.__entreNubes` exposes `{ state, scene, camera, env }` for debugging (for example `state.fm` is the flight model and `state.world` the terrain).
 
-**Cache busting:** every local import carries `?v=N` (`from './world.js?v=9'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
+**Cache busting:** every local import carries `?v=N` (`from './world.js?v=11'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
 
 ```
-sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=9'#g" js/*.js
-sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=9\"#g" index.html
+sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=11'#g" js/*.js
+sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=11\"#g" index.html
 ```
 
 ## Architecture
 
-`js/main.js` is the orchestrator: settings (localStorage key `entrenubes2`), menu/showroom scene, input (keyboard, mouse head-look, gamepad), cameras, HUD/minimap, the game loop and flight start/restart. Flights always start on the origin runway threshold, helicopters included.
+`js/main.js` is the orchestrator: settings (localStorage key `entrenubes2`), menu/showroom scene, input (keyboard, mouse head-look, gamepad), cameras, warnings/mission chip, the game loop and flight start/restart. Flights always start on the origin runway threshold, helicopters included.
 
 Main loop per frame: input → fixed-step physics (`STEP = 1/120`, accumulated) → combat/mission update → physics events (`crash`, `touchdown`) → model animation → camera → `world.update` (chunk streaming with a time budget) → `env.update` → cockpit instrument redraw → HUD → audio → `fx.render` (post-processing) → tactical marker overlay.
 
-**HUD rule:** only one HUD is visible at a time. In cockpit view the aircraft's own HUD (combiner canvas in `cockpit.js`, drawn by `instruments.fighterHUD`) plus the instrument panels show the data; the DOM `#hud-bar` and the minimap are hidden via the `cockpit` class on `#hud`. In exterior views the compact `#hud-bar` is shown. Warnings, messages and the mission chip are shown in both. The minimap canvas is still redrawn in cockpit view because the cockpit's map display (MFD) reads it.
+**HUD rule:** there is no exterior HUD (the owner asked for it to be removed). Flight data lives only in the cockpit: the aircraft's HUD (combiner canvas in `cockpit.js`, drawn by `instruments.fighterHUD` or `instruments.heliHUD`) and the instrument panels. Exterior views only show warnings, messages, the mission chip (which carries ammo/armour in combat) and the toolbar.
+
+**Cockpit zoom:** the mouse wheel in cockpit view does not change the FOV. It leans the eye toward where the pilot looks (`state.lean`, applied in `updateCamera`), so the HUD and screens grow while the outside view stays wide. The fighter HUD is conformal: `Cockpit.hudGeo(eye)` recomputes pixels-per-degree and the boresight point from the current eye position every redraw, so it stays aligned while leaning.
 
 **Shader warm-up:** `startFlight` calls `renderer.compileAsync` behind the loading screen. Without it, the 100+ material variants compile during the first seconds of flight and the frame rate collapses on integrated GPUs.
 
@@ -54,7 +56,8 @@ Main loop per frame: input → fixed-step physics (`STEP = 1/120`, accumulated) 
   - `LIVERIES[id].skins` maps a material colour (hex) to a procedural skin texture (camouflage, panel lines, rivets, grime). Any `MeshStandardMaterial` whose colour matches is replaced, and the mesh gets box-projected UVs in model space so the pattern is continuous across parts. To skin a part, give it a colour listed there.
   - Decals are canvas textures (`DECALS.*`) placed with `addDecal` (`'side'` faces +X, `mirror` adds the −X copy; `flipText:false` mirrors the art instead of keeping text readable).
   - It also adds edge outlines (`EdgesGeometry`, toggled by `setEdgesVisible`; call `forgetEdges` when discarding a model) and registers materials for the PMREM sky reflection whose intensity `main.js` scales with daylight.
-- `cockpit.js`: interior builders keyed by `spec.cockpit`, with coordinates relative to the eye. Instruments are drawn to canvas textures by `instruments.js` at about 15 Hz; the fighter HUD at 30 Hz.
+- `cockpit.js`: interior builders keyed by `spec.cockpit`, with coordinates relative to the eye. Panels are declared in `PANELS` as items in canvas pixels (`mfd`, `gauge`, `box`, plus static `deco`) and built in three layers: a static lit faceplate canvas (with bump), a transparent self-lit live canvas redrawn at about 15 Hz by `instruments.js`, and real geometry (bezels, instanced push-buttons, gauge rings, glass). The HUD redraws at 30 Hz.
+- `navmap.js`: moving map for the cockpit MFDs. A north-up shaded-relief cache (32 km) is rebuilt row by row within a time budget (`update`, called every frame; primed synchronously in `startFlight`), then drawn heading-up with range rings, airports, route and combat contacts.
 - `physics.js`: `FlightModel`.
   - Planes use a lift/drag model with auto-trim toward level-flight angle of attack.
   - Helicopters are arcade-style: 50 % collective = hover, tilt is compensated, attitude-command cyclic, and drag is computed in ground axes so pitching forward accelerates instead of sinking.

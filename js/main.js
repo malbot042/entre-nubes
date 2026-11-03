@@ -1,29 +1,29 @@
 // Entre Nubes — bucle principal, cámaras, entrada, HUD y menús.
 import * as THREE from 'three';
-import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=9';
-import { buildModel } from './models.js?v=9';
-import { Cockpit } from './cockpit.js?v=9';
-import { FlightModel } from './physics.js?v=9';
-import { World, CHUNK } from './world.js?v=9';
-import { Environment, WEATHER } from './environment.js?v=9';
-import { AudioEngine } from './audio.js?v=9';
-import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=9';
-import { PostFX } from './postfx.js?v=9';
-import { Particles } from './effects.js?v=9';
-import { Combat } from './combat.js?v=9';
-import { MODES, createMission, isCombat } from './missions.js?v=9';
-import { TacticalHUD } from './hud.js?v=9';
-import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=9';
+import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=11';
+import { buildModel } from './models.js?v=11';
+import { Cockpit } from './cockpit.js?v=11';
+import { FlightModel } from './physics.js?v=11';
+import { World, CHUNK } from './world.js?v=11';
+import { Environment, WEATHER } from './environment.js?v=11';
+import { AudioEngine } from './audio.js?v=11';
+import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=11';
+import { PostFX } from './postfx.js?v=11';
+import { Particles } from './effects.js?v=11';
+import { Combat } from './combat.js?v=11';
+import { MODES, createMission, isCombat } from './missions.js?v=11';
+import { TacticalHUD } from './hud.js?v=11';
+import { NavMap } from './navmap.js?v=11';
+import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=11';
 
 // ---------------- Ajustes persistentes ----------------
-const DEFAULTS = { aircraft: 'f16', time: '13', weather: 'clear', dist: 'medium', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, hud: true, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, assist: true, edges: true, best: {} };
+const DEFAULTS = { aircraft: 'f16', time: '13', weather: 'clear', dist: 'medium', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, assist: true, edges: true, best: {} };
 let settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('entrenubes2') || '{}')); } catch (_) { }
 // ajustes guardados de versiones anteriores (aeronaves o modos retirados)
 if (!AIRCRAFT_BY_ID[settings.aircraft]) settings.aircraft = DEFAULTS.aircraft;
 if (!MODES.some(m => m.id === settings.mode)) settings.mode = 'free';
-// HUD rediseñado: se vuelve a mostrar una vez aunque estuviera oculto en la versión anterior
-if ((settings.schema || 0) < 2) { settings.hud = true; settings.schema = 2; }
+delete settings.hud; // el HUD exterior ya no existe
 const save = () => { try { localStorage.setItem('entrenubes2', JSON.stringify(settings)); } catch (_) { } };
 
 // ---------------- Render ----------------
@@ -90,7 +90,7 @@ const state = {
   cam: 'cockpit',
   world: null, fm: null, model: null, cockpit: null, spec: null,
   origin: null, dest: null,
-  headYaw: 0, headPitch: 0, headYawT: 0, headPitchT: 0, zoom: 1,
+  headYaw: 0, headPitch: 0, headYawT: 0, headPitchT: 0, lean: 0, leanS: 0,
   orbitYaw: 0, orbitPitch: 0.18, orbitDist: 1, chaseYaw: 0,
   flybyPos: new THREE.Vector3(), flybyT: 0,
   lights: false, arrived: false, flightTime: 0, distFlown: 0, lastTouch: null,
@@ -220,8 +220,6 @@ function bindSettings() {
   const v = $('set-volume'); v.value = settings.volume; v.oninput = () => { settings.volume = +v.value; save(); audio.setVolume(settings.volume); };
   const u = $('set-units'); u.value = settings.units; u.onchange = () => { settings.units = u.value; save(); };
   const inv = $('set-invert'); inv.checked = settings.invert; inv.onchange = () => { settings.invert = inv.checked; save(); };
-  const hud = $('set-hud'); hud.checked = settings.hud; hud.onchange = () => { settings.hud = hud.checked; save(); $('hud').classList.toggle('nohud', !settings.hud); };
-  $('hud').classList.toggle('nohud', !settings.hud);
   const ed = $('set-edges'); ed.checked = settings.edges; ed.onchange = () => { settings.edges = ed.checked; save(); setEdgesVisible(settings.edges); };
   const as = $('set-assist'); as.checked = settings.assist; as.onchange = () => { settings.assist = as.checked; $('opt-assist').checked = as.checked; save(); toast(settings.assist ? 'Pilotaje asistido activado' : 'Pilotaje asistido desactivado'); };
   const fu = $('set-fuel'); fu.checked = settings.fuel; fu.onchange = () => { settings.fuel = fu.checked; save(); if (state.fm) state.fm.infiniteFuel = fu.checked; };
@@ -268,6 +266,7 @@ async function startFlight(keepWorld = false) {
     const rnd = mulberry32(state.seed);
     const world = new World(state.seed, scene, settings.quality);
     state.world = world;
+    state.navMap = new NavMap(world);
     state.origin = world.addAirport(0, 0, rnd, false);
     makeDestination(state.origin.x, state.origin.z, rnd() * Math.PI * 2, rnd);
   }
@@ -281,6 +280,7 @@ async function startFlight(keepWorld = false) {
   setLoading(true, 'Cargando escenario…');
   await new Promise(r => setTimeout(r, 20));
   state.world.update(state.fm.pos, 0, 0, true);
+  state.navMap.update(state.fm.pos.x, state.fm.pos.z, Infinity);
   // precompila los shaders con la pantalla de carga visible: evita tirones al empezar a volar
   setLoading(true, 'Preparando shaders…');
   await new Promise(r => setTimeout(r, 20));
@@ -312,8 +312,6 @@ function beginMission() {
   const on = !!state.mission;
   $('hud-mission').classList.toggle('hidden', !on);
   $('btn-newdest').style.display = on ? 'none' : '';
-  $('hud-arms').classList.toggle('hidden', !isCombat(settings.mode));
-  $('dest-title').textContent = on ? 'OBJETIVO' : 'DESTINO';
   return state.mission;
 }
 
@@ -374,7 +372,7 @@ function spawnAircraft(id, start) {
   scene.add(model.group);
   model.group.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   // cabina
-  const ck = new Cockpit(spec, $('minimap'));
+  const ck = new Cockpit(spec, state.navMap);
   ck.group.traverse(o => o.layers.set(1));
   state.cockpit = ck;
   eyePivot.position.copy(model.parts.eye);
@@ -435,7 +433,7 @@ function spawnAircraft(id, start) {
   }
   // cámara
   state.headYaw = state.headYawT = 0; state.headPitch = state.headPitchT = defPitch();
-  state.zoom = 1;
+  state.lean = state.leanS = 0;
   const box = new THREE.Box3().setFromObject(model.group);
   state.modelSize = box.getSize(new THREE.Vector3()).length();
   model.size = state.modelSize;
@@ -446,10 +444,6 @@ function spawnAircraft(id, start) {
   setCamera(state.cam === 'flyby' ? 'chase' : state.cam);
   setEdgesVisible(settings.edges);
   audio.setAircraft(spec);
-  $('lbl-thr').textContent = spec.type === 'heli' ? 'COLECT.' : 'POT.';
-  $('i-gear').style.display = spec.gearFixed || (spec.type === 'heli' && !spec.gearRetract) ? 'none' : '';
-  $('i-flaps').style.display = spec.flaps ? '' : 'none';
-  $('i-ab').style.display = spec.ab ? '' : 'none';
 }
 
 function setCamera(mode) {
@@ -543,7 +537,7 @@ addEventListener('keydown', (e) => {
     case 'KeyP': fm.brakes = !fm.brakes; audio.click(); toast(fm.brakes ? 'Freno de estacionamiento puesto' : 'Freno de estacionamiento quitado'); break;
     case 'KeyL': state.lights = !state.lights; audio.click(); toast(state.lights ? 'Luces encendidas' : 'Luces apagadas'); break;
     case 'KeyC': setCamera({ cockpit: 'chase', chase: 'flyby', flyby: 'cockpit' }[state.cam]); break;
-    case 'KeyV': state.headYawT = 0; state.headPitchT = defPitch(); state.zoom = 1; state.orbitYaw = 0; state.orbitPitch = 0.15; break;
+    case 'KeyV': state.headYawT = 0; state.headPitchT = defPitch(); state.lean = 0; state.orbitYaw = 0; state.orbitPitch = 0.15; break;
     case 'KeyT': openWin('win-weather'); break;
     case 'KeyO': openWin('win-settings'); break;
     case 'KeyH': openWin('win-help'); break;
@@ -581,7 +575,7 @@ canvas.addEventListener('pointermove', (e) => {
   if (!drag || state.mode !== 'flying') return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
   drag.x = e.clientX; drag.y = e.clientY;
-  const s = 0.005 * settings.mouse / state.zoom;
+  const s = 0.005 * settings.mouse;
   if (state.cam === 'cockpit') {
     state.headYawT -= dx * s; state.headPitchT -= dy * s;
     state.headYaw = state.headYawT; state.headPitch = state.headPitchT;
@@ -593,7 +587,8 @@ canvas.addEventListener('pointerup', () => { drag = null; });
 canvas.addEventListener('dblclick', () => { state.headYawT = 0; state.headPitchT = defPitch(); state.orbitYaw = 0; state.orbitPitch = 0.15; });
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
-  if (state.cam === 'cockpit') state.zoom = clamp(state.zoom * (e.deltaY > 0 ? 0.9 : 1.1), 1, 3.5);
+  // en cabina la rueda acerca la cabeza a los instrumentos: el exterior no se estrecha
+  if (state.cam === 'cockpit') state.lean = clamp(state.lean + (e.deltaY > 0 ? -0.2 : 0.2), 0, 1);
   else state.orbitDist = clamp(state.orbitDist * (e.deltaY > 0 ? 1.1 : 0.9), 0.4, 6);
 }, { passive: false });
 
@@ -705,97 +700,44 @@ function computeInstState() {
   inst.armed = !!pl && !!spec.arms;
   inst.ammo = pl?.ammo ?? 0; inst.rockets = pl?.rockets ?? 0; inst.hp = pl ? pl.hp / pl.maxHp : 1;
   inst.heli = spec.type === 'heli';
+  inst.agl = Math.max(0, fm.pos.y - spec.gearH - Math.max(0, state.world.groundHeight(fm.pos.x, fm.pos.z))) * ft;
+  const sy = Math.sin(e.y), cy = Math.cos(e.y);
+  inst.velF = (-fm.vel.x * sy - fm.vel.z * cy) * kt;
+  inst.velR = (fm.vel.x * cy - fm.vel.z * sy) * kt;
+  inst.warn = state.warn;
+  inst.pos = fm.pos;
   return inst;
 }
 
-// ---------------- HUD (barra compacta de la vista exterior) ----------------
-const hud = {
-  spd: $('h-spd'), alt: $('h-alt'), hdg: $('h-hdg'), dest: $('h-dest'), dist: $('h-dist'),
-  thr: $('h-thr'), rpm: $('h-rpm'), thrv: $('h-thr-v'), arrow: $('h-arrow'), warn: $('warn'),
-  mini: $('minimap').getContext('2d'),
-};
-let hudT = 0, miniT = 0;
+// ---------------- Avisos y misión ----------------
+// No hay HUD exterior: los datos de vuelo están en el HUD y las pantallas de
+// la cabina. Aquí solo quedan los avisos y la ficha de misión.
+const warnEl = $('warn');
+let hudT = 0;
 function updateHUD(dt) {
-  hudT -= dt; miniT -= dt;
+  hudT -= dt;
   if (hudT > 0) return;
   hudT = 0.05;
-  const s = inst, fm = state.fm, spec = state.spec, met = settings.units === 'metric';
-  const agl = fm.pos.y - spec.gearH - Math.max(0, state.world.groundHeight(fm.pos.x, fm.pos.z));
-  // avisos (siempre visibles, también en cabina)
+  const fm = state.fm, spec = state.spec;
+  const agl = inst.agl / 3.28084;
   let warn = '';
   if (fm.crashed) warn = '';
   else if (fm.stall) warn = 'PÉRDIDA';
   else if (!fm.onGround && agl < 150 && fm.vel.y < -8 && spec.type !== 'heli') warn = 'PULL UP';
   else if (!fm.onGround && !spec.gearFixed && spec.type !== 'heli' && fm.gear < 0.99 && agl < 120 && fm.throttle < 0.4) warn = 'TREN';
   else if (inst.lowFuel) warn = 'COMBUSTIBLE';
-  hud.warn.textContent = warn;
+  warnEl.textContent = warn;
   state.warn = warn;
   if (state.mission) {
-    $('hud-mission').innerHTML = state.mission.panel();
+    let html = state.mission.panel();
     const pl = combat.player;
-    if (state.mission.combat && pl) {
-      $('h-hp').style.width = `${pl.hp / pl.maxHp * 100}%`;
-      $('h-hp').className = pl.hp < pl.maxHp * 0.35 ? 'low' : '';
-      $('h-ammo').textContent = pl.ammo;
-      $('h-rockets').textContent = pl.rockets;
-      $('h-score').textContent = combat.score;
-    }
+    if (state.mission.combat && pl) html += ` · Blindaje ${Math.round(pl.hp / pl.maxHp * 100)} % · Cañón ${pl.ammo} · Cohetes ${pl.rockets} · ${combat.score} pts`;
+    $('hud-mission').innerHTML = html;
   }
-  // el minimapa también alimenta la pantalla de mapa de la cabina
-  if (miniT <= 0) { miniT = 0.5; drawMinimap(); }
-  if (state.cam === 'cockpit' || !settings.hud) return;
-  hud.spd.textContent = Math.round(met ? fm.ias * 3.6 : s.ias);
-  hud.alt.textContent = Math.round(met ? fm.pos.y : s.alt);
-  hud.hdg.textContent = String(Math.round(s.hdg) % 360).padStart(3, '0');
-  $('u-spd').textContent = met ? 'km/h' : 'kt'; $('u-alt').textContent = met ? 'm' : 'ft';
-  hud.dest.textContent = navTarget().icao;
-  hud.dist.textContent = s.destDist.toFixed(1);
-  hud.arrow.style.transform = `rotate(${s.destBrg - s.hdg - 90}deg)`;
-  hud.thr.style.width = `${fm.throttle * 100}%`;
-  hud.rpm.style.left = `${fm.rpm * 100}%`;
-  hud.thrv.textContent = `${Math.round(fm.throttle * 100)}%`;
-  const setInd = (id, on, cls = 'on') => { const el = $(id); el.classList.remove('on', 'transit', 'hot'); if (on) el.classList.add(cls); };
-  setInd('i-gear', fm.gear > 0.01, fm.gear > 0.99 ? 'on' : 'transit');
-  setInd('i-flaps', fm.flaps > 0, 'transit');
-  setInd('i-brake', fm.brakes || state.input.brake, 'transit');
-  setInd('i-ab', fm.ab, 'hot');
-}
-
-function drawMinimap() {
-  const g = hud.mini, W = 200, R = 10000;
-  const fm = state.fm, w = state.world;
-  const N = 40, cs = W / N;
-  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-    const x = fm.pos.x + ((i + 0.5) / N - 0.5) * 2 * R;
-    const z = fm.pos.z + ((j + 0.5) / N - 0.5) * 2 * R;
-    const c = w.surfaceInfo(x, z);
-    g.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
-    g.fillRect(i * cs, j * cs, cs + 1, cs + 1);
-  }
-  g.fillStyle = 'rgba(0,0,0,0.15)'; g.fillRect(0, 0, W, W);
-  const toMap = (x, z) => [W / 2 + (x - fm.pos.x) / R * W / 2, W / 2 + (z - fm.pos.z) / R * W / 2];
-  for (const ap of w.airports) {
-    const [mx, my] = toMap(ap.x, ap.z);
-    const inside = mx > 0 && mx < W && my > 0 && my < W;
-    g.strokeStyle = ap === state.dest ? '#ffb648' : '#ffffff'; g.lineWidth = 3;
-    if (inside) {
-      g.beginPath(); g.moveTo(mx - ap.dir.x * 10, my - ap.dir.z * 10); g.lineTo(mx + ap.dir.x * 10, my + ap.dir.z * 10); g.stroke();
-    }
-    if (ap === state.dest) {
-      const ang = Math.atan2(my - W / 2, mx - W / 2);
-      const r = Math.min(Math.hypot(mx - W / 2, my - W / 2), W / 2 - 8);
-      g.fillStyle = '#ffb648';
-      g.beginPath(); g.arc(W / 2 + Math.cos(ang) * r, W / 2 + Math.sin(ang) * r, 5, 0, Math.PI * 2); g.fill();
-      g.setLineDash([4, 4]); g.strokeStyle = 'rgba(255,182,72,0.7)'; g.lineWidth = 1.5;
-      g.beginPath(); g.moveTo(W / 2, W / 2); g.lineTo(W / 2 + Math.cos(ang) * r, W / 2 + Math.sin(ang) * r); g.stroke(); g.setLineDash([]);
-    }
-  }
-  const h = -fm.euler.y;
-  g.save(); g.translate(W / 2, W / 2); g.rotate(h);
-  g.fillStyle = '#5fd3ff'; g.strokeStyle = '#000'; g.lineWidth = 1;
-  g.beginPath(); g.moveTo(0, -9); g.lineTo(6, 7); g.lineTo(0, 3); g.lineTo(-6, 7); g.closePath(); g.fill(); g.stroke();
-  g.restore();
-  g.fillStyle = '#fff'; g.font = 'bold 12px Rajdhani, sans-serif'; g.textAlign = 'center'; g.fillText('N', W / 2, 14);
+  const nm = state.navMap;
+  const nav = navTarget();
+  nm.dest = nav ? { x: nav.x, z: nav.z, icao: nav.icao } : null;
+  nm.contacts = state.mission?.combat ? () => combat.alive.map(e => ({ x: e.pos.x, z: e.pos.z, air: e.air })) : () => [];
 }
 
 // ---------------- Cámara ----------------
@@ -818,7 +760,15 @@ function updateCamera(dt) {
       clamp(-(fm.g - 1) * 0.012, -0.06, 0.03) + Math.sin(t * 41) * vib,
       lean * 0.08,
     );
-    camera.fov = settings.fov / state.zoom;
+    // inclinarse hacia donde se mira (zoom de cabina): agranda HUD y pantallas
+    // sin cambiar el campo de visión, así el exterior sigue viéndose entero
+    state.leanS = lerp(state.leanS, state.lean, 1 - Math.exp(-dt * 8));
+    const cp = Math.cos(state.headPitch), fz = -Math.cos(state.headYaw) * cp;
+    const L = state.leanS * (spec.type === 'heli' ? 0.3 : 0.36) * (fz < 0 ? 1 : 0.3);
+    camera.position.x += -Math.sin(state.headYaw) * cp * L;
+    camera.position.y += Math.sin(state.headPitch) * L;
+    camera.position.z += fz * L;
+    camera.fov = settings.fov;
   } else if (state.cam === 'chase') {
     const yaw = fm.euler.y;
     let d = yaw - state.chaseYaw;
@@ -967,10 +917,11 @@ function loop() {
   const camWorld = camera.getWorldPosition(_v1);
   state.world.update(camWorld, state.paused ? 0 : dt, 6);
   state.world.updateLights(env.night, camWorld);
+  state.navMap.update(fm.pos.x, fm.pos.z, 1.5);
   for (const ap of state.world.airports) if (ap.windsock) ap.windsock.rotation.y = Math.atan2(-env.wind.z, env.wind.x) + ap.hdg;
   env.update(state.paused ? 0 : dt, { position: camWorld }, fm.pos);
   computeInstState();
-  if (state.cam === 'cockpit') { state.cockpit.update(dt, inst, state.input); state.cockpit.setNight(env.night); }
+  if (state.cam === 'cockpit') { state.cockpit.update(dt, inst, state.input, camera.position); state.cockpit.setNight(env.night); }
   updateHUD(dt);
   updateEffects(state.paused ? 0 : dt);
   audio.update({

@@ -36,6 +36,7 @@ Activado por defecto (menú o Ajustes). En los aviones, A/D fijan el ángulo de 
 | `js/physics.js` | Dinámica de ala fija y rotatoria |
 | `js/world.js` · `js/environment.js` | Terreno procedural, cielo, clima y luz |
 | `js/postfx.js` · `js/effects.js` | Post-procesado y partículas |
+| `js/navmap.js` | Mapa móvil de las pantallas de cabina (relieve sombreado, aeropuertos, ruta) |
 | `js/combat.js` · `js/missions.js` · `js/hud.js` | Armas e IA, modos de juego y marcadores de objetivos |
 
 Prueba local: `python3 -m http.server` y abre http://localhost:8000
