@@ -1,6 +1,6 @@
 // HUD táctico sobre el canvas 3D: retícula, marcadores, adelanto de tiro y flechas fuera de pantalla.
 import * as THREE from 'three';
-import { BULLET_SPEED } from './combat.js?v=12';
+import { BULLET_SPEED } from './combat.js?v=13';
 
 const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _f = new THREE.Vector3();
 const CY = '#3df2ff', RD = '#ff4a3c', AM = '#ffc14d';
@@ -9,6 +9,7 @@ const LABELS = { tank: 'TANQUE', aaa: 'ANTIAÉREO', bunker: 'BÚNKER', truck: 'C
 export class TacticalHUD {
   constructor(canvas) {
     this.cv = canvas; this.g = canvas.getContext('2d');
+    this.curve = null; // [kx, ky] del efecto CRT: los marcadores siguen la curvatura del tubo
     this.resize();
   }
   resize() { this.cv.width = innerWidth; this.cv.height = innerHeight; this.W = innerWidth; this.H = innerHeight; }
@@ -17,6 +18,11 @@ export class TacticalHUD {
   toScreen(v, camera, out) {
     _p.copy(v).project(camera);
     const behind = _p.z > 1;
+    if (this.curve && !behind) {
+      // inversa de q' = q + q·(q.yx)²·k por punto fijo
+      const [kx, ky] = this.curve, sx = _p.x, sy = _p.y;
+      for (let i = 0; i < 4; i++) { const x = _p.x, y = _p.y; _p.x = sx / (1 + y * y * kx); _p.y = sy / (1 + x * x * ky); }
+    }
     out.x = (_p.x * 0.5 + 0.5) * this.W; out.y = (-_p.y * 0.5 + 0.5) * this.H; out.behind = behind;
     out.on = !behind && out.x > 20 && out.x < this.W - 20 && out.y > 20 && out.y < this.H - 20;
     return out;

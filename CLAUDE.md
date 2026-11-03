@@ -16,11 +16,11 @@ python3 -m http.server 8000   # then open http://localhost:8000
 
 There are no tests, linter or build. To verify changes, load the page in a browser and check the console. `window.__entreNubes` exposes `{ state, scene, camera, env }` for debugging (for example `state.fm` is the flight model and `state.world` the terrain).
 
-**Cache busting:** every local import carries `?v=N` (`from './world.js?v=12'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
+**Cache busting:** every local import carries `?v=N` (`from './world.js?v=13'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
 
 ```
-sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=12'#g" js/*.js
-sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=12\"#g" index.html
+sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=13'#g" js/*.js
+sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=13\"#g" index.html
 ```
 
 ## Architecture
@@ -65,7 +65,7 @@ Main loop per frame: input → fixed-step physics (`STEP = 1/120`, accumulated) 
   - Ground contact handles crash rules and tire/skid friction.
 - `environment.js`: sky shader, sun and moon, stars, fog, instanced low-poly clouds plus an overcast layer, rain and snow, lightning, and wind. Weather presets are in `WEATHER`; transitions are interpolated.
 - `audio.js`: WebAudio-synthesized sounds only (no audio files). Initialized on the first user gesture.
-- `missions.js` (modes `free`, `cas`, `dogfight`; `free` has no mission object), `combat.js` (ballistics, rockets, ground units and AI fighters), `hud.js` (screen-space target markers; the gun reticle is suppressed in cockpit view), `postfx.js` (bloom + SSAO; disabled at low quality), `effects.js` (particles).
+- `missions.js` (modes `free`, `cas`, `dogfight`; `free` has no mission object), `combat.js` (ballistics, rockets, ground units and AI fighters), `hud.js` (screen-space target markers; the gun reticle is suppressed in cockpit view), `postfx.js` (bloom + SSAO, disabled at low quality; optional final CRT monitor pass, setting `crt`, on by default, which keeps the composer alive at low quality without bloom/SSAO. Its barrel curvature `CRT_CURVE` is inverted in `hud.js` `toScreen` so tactical markers stay on their targets), `effects.js` (particles).
 
 Saved settings are migrated on load in `main.js`: unknown aircraft or mode ids fall back to defaults, and a `schema` number forces one-off resets.
 

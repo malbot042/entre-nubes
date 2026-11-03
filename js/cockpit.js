@@ -1,8 +1,8 @@
 // Interiores de cabina detallados: estructura, mandos animados, piloto
 // (piernas y guantes), paneles con instrumentos dibujados en canvas y HUD.
 import * as THREE from 'three';
-import * as I from './instruments.js?v=12';
-import { mat, glassMat } from './models.js?v=12';
+import * as I from './instruments.js?v=13';
+import { mat, glassMat } from './models.js?v=13';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const DEG = Math.PI / 180;

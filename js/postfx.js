@@ -109,6 +109,57 @@ class AOPass extends Pass {
   }
 }
 
+// Monitor CRT: curvatura de tubo, líneas de barrido, máscara de fósforo RGB,
+// aberración cromática en los bordes, viñeta y un leve parpadeo. Va después de
+// OutputPass, así que trabaja ya en sRGB y escribe tal cual en pantalla.
+export const CRT_CURVE = [0.03, 0.04];
+const CRT_FS = `
+uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uPR; uniform float uTime; uniform vec2 uCurve;
+varying vec2 vUv;
+float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)))*43758.5453); }
+void main(){
+  vec2 q = vUv*2.0-1.0;
+  q += q*(q.yx*q.yx)*uCurve;
+  vec2 uv = q*0.5+0.5;
+  // bordes del tubo redondeados y suavizados
+  vec2 e = min(uv, 1.0-uv)*uRes/uPR;
+  float edge = smoothstep(0.0, 2.5, min(e.x, e.y));
+  if (edge <= 0.0) { gl_FragColor = vec4(0.0,0.0,0.0,1.0); return; }
+  vec2 d = uv-0.5;
+  vec2 ca = d*(0.0015 + dot(d,d)*0.006);
+  vec3 c = vec3(texture2D(tDiffuse, uv-ca).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv+ca).b);
+  // barrido cada 3 px de CSS; en las zonas brillantes el haz "engorda" y la línea se nota menos
+  float l = dot(c, vec3(0.299,0.587,0.114));
+  float s = 0.5+0.5*cos(uv.y*uRes.y/uPR*2.0943951);
+  c *= mix(mix(0.68, 0.9, l), 1.0, s);
+  // máscara de fósforo en tríadas verticales de píxeles reales
+  float m = mod(floor(gl_FragCoord.x), 3.0);
+  vec3 mask = vec3(m < 0.5 ? 1.08 : 0.94, m > 0.5 && m < 1.5 ? 1.08 : 0.94, m > 1.5 ? 1.08 : 0.94);
+  c *= mask;
+  float vig = pow(16.0*uv.x*uv.y*(1.0-uv.x)*(1.0-uv.y), 0.16);
+  c *= vig*1.14*(1.0 + 0.012*sin(uTime*95.0));
+  c += (hash(gl_FragCoord.xy + fract(uTime)*91.0)-0.5)*0.025;
+  gl_FragColor = vec4(c*edge, 1.0);
+}`;
+
+class CRTPass extends Pass {
+  constructor() {
+    super();
+    this.mat = new THREE.ShaderMaterial({
+      vertexShader: QUAD_VS, fragmentShader: CRT_FS, depthTest: false, depthWrite: false,
+      uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uPR: { value: 1 }, uTime: { value: 0 }, uCurve: { value: new THREE.Vector2(...CRT_CURVE) } },
+    });
+    this.quad = new FullScreenQuad(this.mat);
+  }
+  setSize(w, h) { this.mat.uniforms.uRes.value.set(w, h); }
+  render(renderer, writeBuffer, readBuffer) {
+    this.mat.uniforms.tDiffuse.value = readBuffer.texture;
+    this.mat.uniforms.uTime.value = performance.now() / 1000;
+    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    this.quad.render(renderer);
+  }
+}
+
 // Interior de cabina: segunda pasada con plano cercano propio, encima del mundo
 class CockpitPass extends Pass {
   constructor() { super(); this.needsSwap = false; this.scene = null; this.camera = null; }
@@ -148,19 +199,31 @@ export class PostFX {
     this.cockpit = new CockpitPass();
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.42, 0.55, 1.0);
     this.output = new OutputPass();
-    for (const p of [this.sceneP, this.ao, this.cockpit, this.bloom, this.output]) this.composer.addPass(p);
+    this.crtP = new CRTPass();
+    this.crtP.enabled = false;
+    this.crtP.mat.uniforms.uPR.value = pr;
+    for (const p of [this.sceneP, this.ao, this.cockpit, this.bloom, this.output, this.crtP]) this.composer.addPass(p);
+    this.quality = 'medium';
     this.enabled = true;
   }
 
+  // en calidad baja no hay composer, salvo que el CRT lo necesite (sin bloom ni SSAO)
   setQuality(q) {
-    this.enabled = q !== 'low';
-    this.ao.enabled = q === 'high' || q === 'medium';
+    this.quality = q;
+    const low = q === 'low';
+    this.enabled = !low || this.crtP.enabled;
+    this.ao.enabled = !low;
+    this.bloom.enabled = !low;
     this.bloom.strength = q === 'high' ? 0.5 : 0.42;
   }
+
+  set crt(on) { this.crtP.enabled = on; this.setQuality(this.quality); }
+  get crt() { return this.crtP.enabled; }
 
   resize(w, h) {
     this.composer.setPixelRatio(this.renderer.getPixelRatio());
     this.composer.setSize(w, h);
+    this.crtP.mat.uniforms.uPR.value = this.renderer.getPixelRatio();
   }
 
   render(scene, camera, withCockpit = false) {

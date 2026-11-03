@@ -1,23 +1,23 @@
 // Entre Nubes — bucle principal, cámaras, entrada, HUD y menús.
 import * as THREE from 'three';
-import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=12';
-import { buildModel } from './models.js?v=12';
-import { Cockpit } from './cockpit.js?v=12';
-import { FlightModel } from './physics.js?v=12';
-import { World, CHUNK } from './world.js?v=12';
-import { Environment, WEATHER } from './environment.js?v=12';
-import { AudioEngine } from './audio.js?v=12';
-import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=12';
-import { PostFX } from './postfx.js?v=12';
-import { Particles } from './effects.js?v=12';
-import { Combat } from './combat.js?v=12';
-import { MODES, createMission, isCombat } from './missions.js?v=12';
-import { TacticalHUD } from './hud.js?v=12';
-import { NavMap } from './navmap.js?v=12';
-import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=12';
+import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=13';
+import { buildModel } from './models.js?v=13';
+import { Cockpit } from './cockpit.js?v=13';
+import { FlightModel } from './physics.js?v=13';
+import { World, CHUNK } from './world.js?v=13';
+import { Environment, WEATHER } from './environment.js?v=13';
+import { AudioEngine } from './audio.js?v=13';
+import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=13';
+import { PostFX, CRT_CURVE } from './postfx.js?v=13';
+import { Particles } from './effects.js?v=13';
+import { Combat } from './combat.js?v=13';
+import { MODES, createMission, isCombat } from './missions.js?v=13';
+import { TacticalHUD } from './hud.js?v=13';
+import { NavMap } from './navmap.js?v=13';
+import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=13';
 
 // ---------------- Ajustes persistentes ----------------
-const DEFAULTS = { aircraft: 'f16', time: '13', weather: 'clear', dist: 'medium', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, assist: true, edges: true, best: {} };
+const DEFAULTS = { aircraft: 'f16', time: '13', weather: 'clear', dist: 'medium', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, assist: true, edges: true, crt: true, best: {} };
 let settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('entrenubes2') || '{}')); } catch (_) { }
 // ajustes guardados de versiones anteriores (aeronaves o modos retirados)
@@ -39,6 +39,7 @@ applyPixelRatio();
 
 const fx = new PostFX(renderer);
 fx.setQuality(settings.quality);
+fx.crt = settings.crt;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(settings.fov, innerWidth / innerHeight, 0.5, 45000);
@@ -54,6 +55,7 @@ env.sun.shadow.camera.layers.enableAll();
 const particles = new Particles(scene);
 const combat = new Combat(scene, particles, audio);
 const tacHud = new TacticalHUD(document.getElementById('hud-canvas'));
+tacHud.curve = settings.crt ? CRT_CURVE : null;
 
 // Escena del hangar (menú)
 const menuScene = new THREE.Scene();
@@ -221,6 +223,7 @@ function bindSettings() {
   const u = $('set-units'); u.value = settings.units; u.onchange = () => { settings.units = u.value; save(); };
   const inv = $('set-invert'); inv.checked = settings.invert; inv.onchange = () => { settings.invert = inv.checked; save(); };
   const ed = $('set-edges'); ed.checked = settings.edges; ed.onchange = () => { settings.edges = ed.checked; save(); setEdgesVisible(settings.edges); };
+  const crt = $('set-crt'); crt.checked = settings.crt; crt.onchange = () => { settings.crt = crt.checked; save(); fx.crt = crt.checked; tacHud.curve = crt.checked ? CRT_CURVE : null; };
   const as = $('set-assist'); as.checked = settings.assist; as.onchange = () => { settings.assist = as.checked; $('opt-assist').checked = as.checked; save(); toast(settings.assist ? 'Pilotaje asistido activado' : 'Pilotaje asistido desactivado'); };
   const fu = $('set-fuel'); fu.checked = settings.fuel; fu.onchange = () => { settings.fuel = fu.checked; save(); if (state.fm) state.fm.infiniteFuel = fu.checked; };
   const ms = $('set-mouse'); ms.value = settings.mouse; ms.oninput = () => { settings.mouse = +ms.value; save(); };
