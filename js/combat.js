@@ -1,7 +1,7 @@
 // Combate: proyectiles vectoriales, cohetes no guiados, unidades enemigas e IA.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { clamp, lerp } from './util.js?v=13';
+import { clamp, lerp } from './util.js?v=15';
 
 const G = 9.81;
 const BULLET_V = 1050, MAX_BULLETS = 500;

@@ -1,6 +1,7 @@
 // HUD táctico sobre el canvas 3D: retícula, marcadores, adelanto de tiro y flechas fuera de pantalla.
 import * as THREE from 'three';
-import { BULLET_SPEED } from './combat.js?v=13';
+import { BULLET_SPEED } from './combat.js?v=15';
+import * as I from './instruments.js?v=15';
 
 const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _f = new THREE.Vector3();
 const CY = '#3df2ff', RD = '#ff4a3c', AM = '#ffc14d';
@@ -10,6 +11,10 @@ export class TacticalHUD {
   constructor(canvas) {
     this.cv = canvas; this.g = canvas.getContext('2d');
     this.curve = null; // [kx, ky] del efecto CRT: los marcadores siguen la curvatura del tubo
+    // HUD de vuelo para las vistas exteriores: el mismo dibujo que el combinador de cabina
+    this.fcv = document.createElement('canvas'); this.fcv.width = this.fcv.height = 512;
+    this.fg = this.fcv.getContext('2d');
+    this.fTimer = 0; this.fGeo = { ppd: 1, bx: 256, by: 256 };
     this.resize();
   }
   resize() { this.cv.width = innerWidth; this.cv.height = innerHeight; this.W = innerWidth; this.H = innerHeight; }
@@ -26,6 +31,28 @@ export class TacticalHUD {
     out.x = (_p.x * 0.5 + 0.5) * this.W; out.y = (-_p.y * 0.5 + 0.5) * this.H; out.behind = behind;
     out.on = !behind && out.x > 20 && out.x < this.W - 20 && out.y > 20 && out.y < this.H - 20;
     return out;
+  }
+
+  // HUD exterior centrado en pantalla. La escalera usa los grados de la cámara,
+  // así que en la vista de persecución el horizonte del HUD casa con el real.
+  flightHUD(dt, s, camera) {
+    const size = Math.min(this.H * 0.66, this.W * 0.56), k = 512 / size;
+    this.fTimer -= dt;
+    if (this.fTimer <= 0) {
+      this.fTimer = 1 / 30;
+      const armed = s.armed; s.armed = false; // la retícula con adelanto ya la pone draw()
+      if (s.heli) I.heliHUD(this.fg, 512, 512, s);
+      else {
+        this.fGeo.ppd = this.H / 2 / Math.tan(camera.fov * Math.PI / 360) * Math.tan(Math.PI / 180) * k;
+        I.fighterHUD(this.fg, 512, 512, s, this.fGeo);
+      }
+      s.armed = armed;
+    }
+    const g = this.g;
+    g.save();
+    g.shadowColor = 'rgba(0,20,0,0.75)'; g.shadowBlur = 4;
+    g.drawImage(this.fcv, (this.W - size) / 2, (this.H - size) / 2, size, size);
+    g.restore();
   }
 
   // doble trazo: halo ancho y núcleo fino, sin el coste de shadowBlur
