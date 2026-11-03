@@ -1,8 +1,8 @@
 // Modelos low-poly procedurales de todas las aeronaves.
 // Convención: morro hacia -Z, arriba +Y, derecha +X. Origen ≈ centro de gravedad.
 import * as THREE from 'three';
-import { AIRCRAFT_BY_ID } from './aircraft.js?v=21';
-import { applyLivery, LIVERIES, DECALS, addDecal } from './livery.js?v=21';
+import { AIRCRAFT_BY_ID } from './aircraft.js?v=23';
+import { applyLivery, LIVERIES, DECALS, addDecal } from './livery.js?v=23';
 
 const DEG = Math.PI / 180;
 const matCache = new Map();

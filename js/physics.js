@@ -1,6 +1,6 @@
 // Modelo de vuelo simplificado pero creíble para aviones y helicópteros.
 import * as THREE from 'three';
-import { clamp, lerp, smoothstep, DEG } from './util.js?v=21';
+import { clamp, lerp, smoothstep, DEG } from './util.js?v=23';
 
 const G = 9.81;
 const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _q = new THREE.Quaternion(), _qi = new THREE.Quaternion();
@@ -247,38 +247,42 @@ export class FlightModel {
     const s = this.spec;
     this.aoa = 0; this.stall = false;
     const ax = this.vel.x - env.wind.x, az = this.vel.z - env.wind.z;
-    const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
-    let vf = ax * fx + az * fz, vr = ax * rx + az * rz;
     const airborne = !this.onGround || this.throttle > 0.52;
     const push = airborne ? -input.pitch : 0; // W = +1
     const A = 11, vmax = s.vmax;
     // Arcade clásico: todo vuelve a reposo al soltar.
+    // A/D: girar el morro. Cuanto más rápido, más abierto el giro (a 40 m/s, la mitad
+    // de rápido que en estacionario), así no se mueve a tirones a alta velocidad.
+    const vf0 = -ax * Math.sin(yaw) - az * Math.cos(yaw);
+    const yawT = -input.roll * 0.55 * s.yaw * DEG / (1 + Math.max(vf0, 0) / 30);
+    this.yawRate = (this.yawRate || 0) + (yawT - (this.yawRate || 0)) * Math.min(1, dt * 7);
+    if (this.onGround && !airborne) this.yawRate *= 0.2;
+    const newYaw = yaw + this.yawRate * dt;
+    // la velocidad se descompone en los ejes nuevos: al girar el morro aparece una
+    // componente lateral que el agarre va absorbiendo, y la trayectoria sigue al
+    // morro con un poco de inercia en vez de girar con él como sobre raíles
+    const nfx = -Math.sin(newYaw), nfz = -Math.cos(newYaw), nrx = Math.cos(newYaw), nrz = -Math.sin(newYaw);
+    let vf = ax * nfx + az * nfz, vr = ax * nrx + az * nrz;
     // W/S: avanzar / retroceder mientras se pulsan; al soltar frena hasta el estacionario
     const vfT = push > 0 ? push * vmax : push * 12;
     const acc = clamp((vfT - vf) * (push ? 0.5 : 0.6), -A * 1.3, A);
     vf += acc * dt;
     // Q/E: desplazamiento lateral (hasta 14 m/s); sin mando, agarre lateral
     const vrT = airborne ? input.yaw * 14 : 0;
-    vr += (vrT - vr) * (1 - Math.exp(-dt * (vrT ? 2.2 : 3.5)));
+    vr += (vrT - vr) * (1 - Math.exp(-dt * (vrT ? 2.2 : 3)));
     // colectivo: 50 % = estacionario; 100 % sube a 11 m/s, 0 % baja a 6 m/s
     const c = this.throttle - 0.5;
     const vyT = c >= 0 ? c * 2 * 11 : c * 2 * 6;
     let vy = this.vel.y - env.wind.y;
     vy += (vyT - vy) * Math.min(1, dt * 2.5);
-    // A/D: girar el morro a cualquier velocidad; la trayectoria sigue al morro
-    const yawT = -input.roll * 0.55 * s.yaw * DEG;
-    this.yawRate = (this.yawRate || 0) + (yawT - (this.yawRate || 0)) * Math.min(1, dt * 7);
-    if (this.onGround && !airborne) this.yawRate *= 0.2;
-    const newYaw = yaw + this.yawRate * dt;
     // actitud visual: morro abajo al acelerar y en crucero, arriba al frenar;
     // alabeo hacia dentro del giro en avance y hacia el lado del desplazamiento
     const pitchT = clamp(-(acc / A) * 9 * DEG - (vf / vmax) * 4 * DEG, -12 * DEG, 12 * DEG);
-    const rollT = clamp(this.yawRate * Math.max(vf, 0) / G, -30 * DEG, 30 * DEG) - (vr / 14) * 12 * DEG;
+    const rollT = clamp(this.yawRate * Math.max(vf, 0) / G, -35 * DEG, 35 * DEG) - (vrT / 14) * 12 * DEG;
     this.visPitch = lerp(this.visPitch || 0, this.onGround && !airborne ? 0 : pitchT, Math.min(1, dt * 4));
     this.visRoll = lerp(this.visRoll || 0, this.onGround && !airborne ? 0 : rollT, Math.min(1, dt * 4));
     _e.set(this.visPitch, newYaw, this.visRoll, 'YXZ');
     this.quat.setFromEuler(_e);
-    const nfx = -Math.sin(newYaw), nfz = -Math.cos(newYaw), nrx = Math.cos(newYaw), nrz = -Math.sin(newYaw);
     this.vel.set(nfx * vf + nrx * vr + env.wind.x, vy + env.wind.y, nfz * vf + nrz * vr + env.wind.z);
     this.omega.set(0, this.yawRate, 0);
     this.liftRatio = airborne ? 1 : clamp(this.throttle * 2, 0, 1);

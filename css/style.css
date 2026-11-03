@@ -84,7 +84,7 @@ button.primary { background: linear-gradient(180deg, #67e8ff, #22a6dc); color: #
 button.primary:hover { filter: brightness(1.1); }
 .menu-links { color: var(--muted); font-size: 13px; text-align: center; }
 .menu-links a { color: var(--accent); text-decoration: none; }
-.version { color: var(--muted); font-family: var(--mono); font-size: 11px; text-align: center; opacity: 0.7; letter-spacing: 1px; }
+#version { position: fixed; right: 10px; bottom: 5px; z-index: 30; pointer-events: none; color: var(--muted); font-family: var(--mono); font-size: 11px; opacity: 0.7; letter-spacing: 1px; text-shadow: 0 1px 2px #000; }
 /* ficha técnica */
 #spec-card { position: absolute; right: 24px; bottom: 24px; width: min(380px, calc(100vw - 48px)); padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; }
 .spec-role { color: var(--accent2); font-size: 12px; letter-spacing: 3px; font-weight: 700; text-transform: uppercase; }
