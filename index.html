@@ -7,7 +7,7 @@
   <meta name="description" content="Simulador y arcade de vuelo 3D en el navegador: F-14, F-16, F/A-18, A-10, Apache y LHX con estética low-poly retro, render moderno, combate aéreo y ataque a tierra.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=11">
+  <link rel="stylesheet" href="css/style.css?v=12">
   <script type="importmap">
   {
     "imports": {
@@ -74,7 +74,7 @@
           </select>
         </label>
       </div>
-      <label class="switch"><input type="checkbox" id="opt-assist" checked><span></span> Pilotaje asistido <em>las alas se nivelan solas, virajes sin perder altura y sin pérdidas</em></label>
+      <label class="switch"><input type="checkbox" id="opt-assist" checked><span></span> Pilotaje asistido <em>el alabeo se mantiene solo, virajes sin perder altura y sin pérdidas</em></label>
 
       <button id="btn-fly" class="primary">DESPEGAR ✈</button>
       <div class="menu-links">
@@ -141,7 +141,7 @@
       <table>
         <tr><th colspan="2">Avión</th></tr>
         <tr><td>W / S · ↑ / ↓</td><td>Bajar / subir el morro</td></tr>
-        <tr><td>A / D · ← / →</td><td>Alabear (con pilotaje asistido: girar; al soltar se nivela)</td></tr>
+        <tr><td>A / D · ← / →</td><td>Alabear (con pilotaje asistido el viraje se mantiene al soltar; pulsa el lado contrario para nivelar)</td></tr>
         <tr><td>Q / E</td><td>Timón (y dirección en tierra)</td></tr>
         <tr><td>Shift / Ctrl · R / F</td><td>Más / menos potencia</td></tr>
         <tr><td>1 … 0</td><td>Potencia 10 % … 100 %</td></tr>
@@ -149,7 +149,7 @@
         <tr><th colspan="2">Helicóptero</th></tr>
         <tr><td>Shift / Ctrl · R / F</td><td>Colectivo (50 % = estacionario)</td></tr>
         <tr><td>W / S</td><td>Avanzar / frenar (inclina el morro)</td></tr>
-        <tr><td>A / D</td><td>Girar e inclinar (con pilotaje asistido)</td></tr>
+        <tr><td>A / D</td><td>Desplazarse de lado en estacionario; girar al avanzar (pilotaje asistido)</td></tr>
         <tr><td>Q / E</td><td>Pedales (girar sobre sí mismo)</td></tr>
         <tr><th colspan="2">Armas (modos de combate)</th></tr>
         <tr><td>Espacio · Z</td><td>Cañón · cohetes no guiados</td></tr>
@@ -190,6 +190,6 @@
 
   <div id="loading" class="overlay hidden"><div class="spinner"></div><div id="loading-text">Generando terreno…</div></div>
   <noscript>Este simulador necesita JavaScript y WebGL.</noscript>
-  <script type="module" src="js/main.js?v=11"></script>
+  <script type="module" src="js/main.js?v=12"></script>
 </body>
 </html>

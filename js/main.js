@@ -1,20 +1,20 @@
 // Entre Nubes — bucle principal, cámaras, entrada, HUD y menús.
 import * as THREE from 'three';
-import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=11';
-import { buildModel } from './models.js?v=11';
-import { Cockpit } from './cockpit.js?v=11';
-import { FlightModel } from './physics.js?v=11';
-import { World, CHUNK } from './world.js?v=11';
-import { Environment, WEATHER } from './environment.js?v=11';
-import { AudioEngine } from './audio.js?v=11';
-import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=11';
-import { PostFX } from './postfx.js?v=11';
-import { Particles } from './effects.js?v=11';
-import { Combat } from './combat.js?v=11';
-import { MODES, createMission, isCombat } from './missions.js?v=11';
-import { TacticalHUD } from './hud.js?v=11';
-import { NavMap } from './navmap.js?v=11';
-import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=11';
+import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=12';
+import { buildModel } from './models.js?v=12';
+import { Cockpit } from './cockpit.js?v=12';
+import { FlightModel } from './physics.js?v=12';
+import { World, CHUNK } from './world.js?v=12';
+import { Environment, WEATHER } from './environment.js?v=12';
+import { AudioEngine } from './audio.js?v=12';
+import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=12';
+import { PostFX } from './postfx.js?v=12';
+import { Particles } from './effects.js?v=12';
+import { Combat } from './combat.js?v=12';
+import { MODES, createMission, isCombat } from './missions.js?v=12';
+import { TacticalHUD } from './hud.js?v=12';
+import { NavMap } from './navmap.js?v=12';
+import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=12';
 
 // ---------------- Ajustes persistentes ----------------
 const DEFAULTS = { aircraft: 'f16', time: '13', weather: 'clear', dist: 'medium', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, assist: true, edges: true, best: {} };

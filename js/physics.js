@@ -1,6 +1,6 @@
 // Modelo de vuelo simplificado pero creíble para aviones y helicópteros.
 import * as THREE from 'three';
-import { clamp, lerp, smoothstep, DEG } from './util.js?v=11';
+import { clamp, lerp, smoothstep, DEG } from './util.js?v=12';
 
 const G = 9.81;
 const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _q = new THREE.Quaternion(), _qi = new THREE.Quaternion();
@@ -138,9 +138,13 @@ export class FlightModel {
       tgt.x = input.pitch * s.pitch * DEG * eff2 - (this.aoa - aTrim) * 0.5 * eff;
       tgt.z = -input.roll * s.roll * DEG * eff2;
       if (assist) {
-        // las teclas fijan el ángulo de alabeo (hasta 75°) y al soltarlas las alas se nivelan
-        const bankT = -input.roll * 76 * DEG;
-        tgt.z = clamp((bankT - roll) * 3.5, -s.roll * DEG, s.roll * DEG) * Math.max(eff, 0.4);
+        // las teclas mueven el alabeo deseado (70°/s, hasta 75°) y al soltarlas se
+        // mantiene: para salir del viraje se pulsa el lado contrario. Cerca de
+        // alas niveladas hay un retén que las deja rectas.
+        if (this.bankHold == null) this.bankHold = roll;
+        this.bankHold = clamp(this.bankHold - input.roll * 70 * DEG * dt, -75 * DEG, 75 * DEG);
+        if (Math.abs(input.roll) < 0.05 && Math.abs(this.bankHold) < 4 * DEG) this.bankHold = 0;
+        tgt.z = clamp((this.bankHold - roll) * 3.5, -s.roll * DEG, s.roll * DEG) * Math.max(eff, 0.4);
         // viraje coordinado: velocidades angulares de cuerpo de un giro nivelado
         const phi = clamp(roll, -80 * DEG, 80 * DEG);
         const turn = G * Math.tan(phi) / Math.max(V, 40);
@@ -150,6 +154,7 @@ export class FlightModel {
         const lim = aS * 0.82;
         if (this.aoa > lim * 0.8) tgt.x = Math.min(tgt.x, (lim - this.aoa) * 4);
       }
+      if (!assist) this.bankHold = null;
       // estabilidad lateral (efecto diedro), mayor en aviones civiles
       if (!assist) tgt.z -= roll * 0.03 * eff * (1 - Math.abs(input.roll));
       tgt.y = -input.yaw * s.yaw * DEG * eff2 - this.beta * 1.6 * eff;
@@ -234,8 +239,9 @@ export class FlightModel {
     this.groundContact(dt, input, world);
   }
 
-  // Helicóptero arcade: W/S aceleran y frenan en el sentido del rumbo, A/D giran el rumbo
-  // y el colectivo fija la velocidad vertical. La actitud es solo visual y moderada,
+  // Helicóptero arcade: W/S aceleran y frenan en el sentido del rumbo; A/D desplazan
+  // de lado en estacionario y giran el rumbo en avance; Q/E giran sobre sí mismo;
+  // el colectivo fija la velocidad vertical. La actitud es solo visual y moderada,
   // para que avanzar no hunda el morro ni tape la visión desde la cabina.
   arcadeHeli(dt, input, env, world, yaw) {
     const s = this.spec;
@@ -251,22 +257,24 @@ export class FlightModel {
     if (push === 0) acc -= vf * 0.35; // sin mando, el helicóptero se va parando suavemente
     vf += acc * dt;
     if (vf < -18) vf = -18;
-    // agarre lateral: la trayectoria sigue al morro al girar
-    vr *= Math.exp(-dt * 3.5);
+    // A/D: desplazamiento lateral a poca velocidad (hasta 14 m/s), que se convierte
+    // en giro a medida que el helicóptero avanza; sin mando, agarre lateral
+    const spd = smoothstep(5, 40, Math.abs(vf));
+    const vrT = airborne ? input.roll * 14 * (1 - spd) : 0;
+    vr += (vrT - vr) * (1 - Math.exp(-dt * (vrT ? 2.2 : 3.5)));
     // colectivo: 50 % = estacionario; 100 % sube a 11 m/s, 0 % baja a 6 m/s
     const c = this.throttle - 0.5;
     const vyT = c >= 0 ? c * 2 * 11 : c * 2 * 6;
     let vy = this.vel.y - env.wind.y;
     vy += (vyT - vy) * Math.min(1, dt * 2.5);
-    // rumbo: A/D y pedales; más rápido en estacionario
-    const spd = smoothstep(5, 40, Math.abs(vf));
-    const yawT = -(input.roll * (0.75 - 0.3 * spd) + input.yaw * 0.8) * s.yaw * DEG;
+    // rumbo: pedales siempre; A/D solo en avance
+    const yawT = -(input.roll * 0.5 * spd + input.yaw * 0.8) * s.yaw * DEG;
     this.yawRate = (this.yawRate || 0) + (yawT - (this.yawRate || 0)) * Math.min(1, dt * 7);
     if (this.onGround && !airborne) this.yawRate *= 0.2;
     const newYaw = yaw + this.yawRate * dt;
     // actitud visual: morro abajo al acelerar (máx. 10°), arriba al frenar; alabeo según el giro
     const pitchT = clamp(-push * 8 * DEG - (vf / vmax) * 3 * DEG + (push < 0 && vf > 2 ? 14 * DEG : 0), -12 * DEG, 12 * DEG);
-    const rollT = clamp(this.yawRate * Math.max(vf, 0) / G * 0.8, -24 * DEG, 24 * DEG) - (input.roll * (1 - spd)) * 6 * DEG;
+    const rollT = clamp(this.yawRate * Math.max(vf, 0) / G * 0.8, -24 * DEG, 24 * DEG) - (vr / 14) * 10 * DEG;
     this.visPitch = lerp(this.visPitch || 0, this.onGround && !airborne ? 0 : pitchT, Math.min(1, dt * 4));
     this.visRoll = lerp(this.visRoll || 0, this.onGround && !airborne ? 0 : rollT, Math.min(1, dt * 4));
     _e.set(this.visPitch, newYaw, this.visRoll, 'YXZ');
