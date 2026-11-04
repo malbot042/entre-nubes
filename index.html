@@ -7,7 +7,7 @@
   <meta name="description" content="Simulador y arcade de vuelo 3D en el navegador: F-14, F-16, F/A-18, A-10, Apache y LHX con estética low-poly retro, render moderno, combate aéreo y ataque a tierra.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=33">
+  <link rel="stylesheet" href="css/style.css?v=35">
   <script type="importmap">
   {
     "imports": {
@@ -28,6 +28,7 @@
       <button id="btn-cam" title="Cámara (C)">◉</button>
       <button id="btn-map" title="Mapa táctico (J)">⌖</button>
       <button id="btn-arms" title="Armamento y tiro (I)">✦</button>
+      <button id="btn-visor" title="Visor del casco: verde / térmica (K)">◐</button>
       <button data-win="win-weather" title="Clima y hora (T)">☁</button>
       <button data-win="win-settings" title="Ajustes (O)">⚙</button>
       <button data-win="win-help" title="Controles (H)">?</button>
@@ -184,6 +185,7 @@
         <tr><td>Blanco fijado</td><td>El cañón apunta solo si el blanco está cerca del morro, los cohetes salen guiados y se pueden lanzar misiles (aire-tierra contra vehículos, aire-aire contra aeronaves)</td></tr>
         <tr><th colspan="2">Cámara</th></tr>
         <tr><td>C</td><td>Cabina / exterior / pasada</td></tr>
+        <tr><td>K</td><td>Visor del casco: visión nocturna verde → térmica → apagado. Los datos siguen a la mirada y el HUD del aparato pasa a segundo plano</td></tr>
         <tr><td>Arrastrar ratón · rueda</td><td>Mirar alrededor · en cabina, acercarse al HUD y a las pantallas; fuera, distancia de la cámara</td></tr>
         <tr><td>V / doble clic</td><td>Centrar la vista</td></tr>
         <tr><td>Teclado numérico</td><td>Vistas rápidas (4 6 8 2 5)</td></tr>
@@ -220,6 +222,6 @@
   <div id="version" data-version></div>
   <div id="loading" class="overlay hidden"><div class="spinner"></div><div id="loading-text">Generando terreno…</div></div>
   <noscript>Este simulador necesita JavaScript y WebGL.</noscript>
-  <script type="module" src="js/main.js?v=33"></script>
+  <script type="module" src="js/main.js?v=35"></script>
 </body>
 </html>

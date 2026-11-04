@@ -1,23 +1,23 @@
 // Entre Nubes — bucle principal, cámaras, entrada, HUD y menús.
 import * as THREE from 'three';
-import { AIRCRAFT, AIRCRAFT_BY_ID } from './aircraft.js?v=33';
-import { buildModel } from './models.js?v=33';
-import { Cockpit } from './cockpit.js?v=33';
-import { FlightModel } from './physics.js?v=33';
-import { World, CHUNK } from './world.js?v=33';
-import { Environment, WEATHER } from './environment.js?v=33';
-import { AudioEngine } from './audio.js?v=33';
-import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=33';
-import { PostFX, CRT_CURVE } from './postfx.js?v=33';
-import { Particles } from './effects.js?v=33';
-import { Combat } from './combat.js?v=33';
-import { MODES, createMission, isCombat, Training } from './missions.js?v=33';
-import { Targeting } from './targeting.js?v=33';
-import { TacMap } from './tacmap.js?v=33';
-import { Armory } from './armory.js?v=33';
-import { TacticalHUD } from './hud.js?v=33';
-import { NavMap } from './navmap.js?v=33';
-import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=33';
+import { AIRCRAFT, AIRCRAFT_BY_ID } from './aircraft.js?v=35';
+import { buildModel } from './models.js?v=35';
+import { Cockpit } from './cockpit.js?v=35';
+import { FlightModel } from './physics.js?v=35';
+import { World, CHUNK } from './world.js?v=35';
+import { Environment, WEATHER } from './environment.js?v=35';
+import { AudioEngine } from './audio.js?v=35';
+import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=35';
+import { PostFX, CRT_CURVE } from './postfx.js?v=35';
+import { Particles } from './effects.js?v=35';
+import { Combat } from './combat.js?v=35';
+import { MODES, createMission, isCombat, Training } from './missions.js?v=35';
+import { Targeting } from './targeting.js?v=35';
+import { TacMap } from './tacmap.js?v=35';
+import { Armory } from './armory.js?v=35';
+import { TacticalHUD } from './hud.js?v=35';
+import { NavMap } from './navmap.js?v=35';
+import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=35';
 
 // ---------------- Ajustes persistentes ----------------
 const DEFAULTS = { aircraft: 'f16', time: '13', weather: 'clear', dist: 'medium', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, assist: true, edges: true, crt: true, weapons: null, best: {} };
@@ -111,6 +111,7 @@ const state = {
   lights: false, arrived: false, flightTime: 0, distFlown: 0, lastTouch: null,
   seed: 1, input: { pitch: 0, roll: 0, yaw: 0, brake: false, speedbrake: false },
   gearWarned: false, mission: null,
+  visor: 0, // visor del casco: 0 apagado, 1 visión verde, 2 térmica
 };
 const eyePivot = new THREE.Group();
 // versión del juego: es el número de caché ?v=N con el que index.html carga este módulo
@@ -513,6 +514,7 @@ function restart() {
 function toMenu() {
   state.mission?.dispose(); state.mission = null; state.training = null;
   combat.reset(); combat.player = null; targeting.reset(); tacMap.close(); armory.close();
+  fx.setNight(0); combat.setThermal(false);
   tacHud.clear();
   state.mode = 'menu';
   $('hud').classList.add('hidden');
@@ -537,6 +539,15 @@ $('btn-menu').onclick = () => togglePause();
 $('btn-cam').onclick = () => dispatchKey('KeyC');
 $('btn-map').onclick = () => tacMap.toggle();
 $('btn-arms').onclick = () => armory.toggle();
+$('btn-visor').onclick = () => dispatchKey('KeyK');
+// K: visor del casco apagado → visión verde → térmica → apagado. Solo actúa en la
+// vista de cabina, así que al encenderlo se pasa a ella
+function cycleVisor() {
+  state.visor = (state.visor + 1) % 3;
+  if (state.visor && state.cam !== 'cockpit') setCamera('cockpit');
+  audio.click();
+  toast(['Visor del casco apagado', 'Visor del casco: visión nocturna verde', 'Visor del casco: visión térmica'][state.visor]);
+}
 $('btn-sound').onclick = () => { audio.setMuted(!audio.muted); $('btn-sound').textContent = audio.muted ? '🔇' : '🔊'; };
 
 // ---------------- Entrada ----------------
@@ -554,6 +565,7 @@ addEventListener('keydown', (e) => {
     case 'Escape': if (armory.isOpen) armory.close(); else if (tacMap.isOpen) tacMap.close(); else togglePause(); break;
     case 'KeyJ': tacMap.toggle(); break;
     case 'KeyI': armory.toggle(); break;
+    case 'KeyK': cycleVisor(); break;
     case 'KeyY': {
       const w = combat.cycleWeapon();
       if (w) { audio.click(); saveWeapons(); toast(`Arma seleccionada: ${w.name} (${w.n})`); armory.render(true); }
@@ -990,6 +1002,11 @@ function loop() {
     airspeed: fm.ias, rain: env.w.rain, windStrength: env.w.wind, onGround: fm.onGround, groundSpeed: Math.hypot(fm.vel.x, fm.vel.z),
     warn: !!state.warn && !state.paused, warnType: fm.stall ? 'stall' : 'gear', crashed: fm.crashed,
   });
+  // visor del casco: filtro nocturno, HUD atenuado y blancos calientes en térmica
+  const visor = state.cam === 'cockpit' && !fm.crashed ? state.visor : 0;
+  fx.setNight(visor, 2 + 13 * env.night);
+  state.cockpit.setHudDim(visor > 0);
+  combat.setThermal(visor === 2);
   fx.render(scene, camera, state.cam === 'cockpit');
   const pl = combat.player;
   if (pl) {
@@ -997,6 +1014,7 @@ function loop() {
     const markers = combat.alive.map(e => ({ pos: e.pos, vel: e.vel, label: e.kind, air: e.air, e }));
     tacHud.draw(camera, { fm, markers, tg: targeting, armed: !!state.spec.arms && state.cam !== 'cockpit', hitFlash: pl.hitFlash || 0, ammoEmpty: pl.ammo <= 0 });
   } else tacHud.clear();
+  if (visor) tacHud.hmd(inst, camera, fm, { yaw: state.headYaw, pitch: state.headPitch }, visor);
   // fuera de la cabina se ven el HUD del avión y el mapa móvil superpuestos
   if (state.cam !== 'cockpit' && !fm.crashed) {
     tacHud.flightHUD(dt, inst, camera);

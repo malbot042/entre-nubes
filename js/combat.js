@@ -2,7 +2,7 @@
 // unidades enemigas e IA, y blancos de entrenamiento que no disparan.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { clamp, lerp } from './util.js?v=33';
+import { clamp, lerp } from './util.js?v=35';
 
 const G = 9.81;
 const BULLET_V = 1050, MAX_BULLETS = 500;
@@ -120,6 +120,15 @@ export class Combat {
     this.notify = null; // (texto, clase) → aviso en pantalla
     this.salvo = 0; this.burstT = 0; this.prevGun = false; this.prevSec = false;
     this.color = new THREE.Color();
+  }
+
+  // visión térmica: unidades y misiles brillan en blanco (calientes), los restos algo menos
+  setThermal(on) {
+    if (this.thermal === on) return;
+    this.thermal = on;
+    this.mat.emissive.setScalar(on ? 0.9 : 0);
+    this.rocketMat.emissive.setScalar(on ? 1 : 0);
+    this.wreckMat.emissive.setScalar(on ? 0.35 : 0);
   }
 
   // ---- ciclo de vida ----

@@ -16,13 +16,13 @@ python3 -m http.server 8000   # then open http://localhost:8000
 
 There are no tests, linter or build. To verify changes, load the page in a browser and check the console. `window.__entreNubes` exposes `{ state, scene, camera, env, combat, targeting, … }` for debugging (for example `state.fm` is the flight model and `state.world` the terrain).
 
-**Cache busting:** every local import carries `?v=N` (`from './world.js?v=33'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
+**Cache busting:** every local import carries `?v=N` (`from './world.js?v=35'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
 
 The game version shown to players (fixed `#version` label in the bottom-right corner on every screen, console, `window.__entreNubes.version`) is this same N, read from `import.meta.url` in `main.js`. Bumping the cache number therefore publishes a new version: bump it with every change that gets committed, and mention it in the commit message.
 
 ```
-sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=33'#g" js/*.js
-sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=33\"#g" index.html
+sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=35'#g" js/*.js
+sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=35\"#g" index.html
 ```
 
 ## Architecture
@@ -32,6 +32,11 @@ sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=33\"#g" index.html
 Main loop per frame: input → fixed-step physics (`STEP = 1/120`, accumulated) → combat/mission update → physics events (`crash`, `touchdown`) → model animation → camera → `world.update` (chunk streaming with a time budget) → `env.update` → cockpit instrument redraw → HUD → audio → `fx.render` (post-processing) → tactical marker overlay.
 
 **HUD rule:** there is no separate exterior HUD design. In the cockpit, flight data lives in the aircraft's HUD (combiner canvas in `cockpit.js`, drawn by `instruments.fighterHUD` or `instruments.heliHUD`) and the instrument panels. In exterior views, `TacticalHUD.flightHUD` (`hud.js`) draws that same HUD into its own 512 px canvas and overlays it centred on screen. Its pitch ladder uses the camera's pixels-per-degree, and its gun reticle is suppressed because `draw()` already shows the lead reticle. `TacticalHUD.mapOverlay` adds the cockpit moving map (`NavMap.draw`, redrawn at 15 Hz into its own canvas) in the bottom-right corner. Exterior views also show warnings, messages, the mission chip (which carries ammo/armour in combat) and the toolbar.
+
+**Helmet visor (K):** `state.visor` cycles off → green night vision (1) → thermal (2). It only acts in cockpit view; enabling it switches to that view.
+- `postfx` `NightPass` (after `OutputPass`, before CRT) filters the image. Green mode uses auto gain from `env.night`; thermal mode darkens bluish (cold) pixels, and `combat.setThermal` gives the units white emissive so they saturate.
+- `TacticalHUD.hmd` draws head-fixed symbology on screen: line-of-sight heading tape, speed and altitude boxes, conformal horizon and nose symbol, head-orientation box, weapons and target.
+- The aircraft HUD is dimmed (`Cockpit.setHudDim`), so it becomes secondary. The owner chose symbols only: no head-slaved aiming.
 
 **Cockpit zoom:** the mouse wheel in cockpit view does not change the FOV. It leans the eye toward where the pilot looks (`state.lean`, applied in `updateCamera`), so the HUD and screens grow while the outside view stays wide. The fighter HUD is conformal: `Cockpit.hudGeo(eye)` recomputes pixels-per-degree and the boresight point from the current eye position every redraw, so it stays aligned while leaning.
 

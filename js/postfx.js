@@ -160,6 +160,50 @@ class CRTPass extends Pass {
   }
 }
 
+// Visión nocturna del visor del casco (antes del CRT, ya en sRGB).
+// Modo 1: intensificador de luz verde con ganancia automática (más de noche),
+// grano y tubo circular. Modo 2: térmica en blanco caliente: lo frío (cielo,
+// agua) se oscurece y los blancos, que llevan emisivo blanco en este modo, saturan.
+const NIGHT_FS = `
+uniform sampler2D tDiffuse; uniform float uMode; uniform float uGain; uniform float uTime; uniform vec2 uRes;
+varying vec2 vUv;
+float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)))*43758.5453); }
+void main(){
+  vec3 c = texture2D(tDiffuse, vUv).rgb;
+  float l = dot(c, vec3(0.299,0.587,0.114));
+  float n = hash(gl_FragCoord.xy + fract(uTime*7.0)*vec2(113.0,71.0)) - 0.5;
+  vec2 d = vUv - 0.5; d.x *= uRes.x / uRes.y;
+  vec3 o;
+  if (uMode < 1.5) {
+    float v = 1.0 - exp(-l * uGain) + n * 0.08;
+    o = vec3(0.32, 1.0, 0.42) * v * mix(0.12, 1.0, smoothstep(0.78, 0.42, length(d)));
+  } else {
+    float cold = clamp((c.b - max(c.r, c.g)) * 6.0, 0.0, 1.0);
+    float v = (0.1 + 0.48 * l) * (1.0 - 0.8 * cold);
+    v = mix(v, 1.0, smoothstep(0.78, 0.95, min(c.r, min(c.g, c.b)))) + n * 0.035;
+    o = vec3(v) * mix(0.55, 1.0, smoothstep(0.95, 0.4, length(d)));
+  }
+  gl_FragColor = vec4(o, 1.0);
+}`;
+
+class NightPass extends Pass {
+  constructor() {
+    super();
+    this.mat = new THREE.ShaderMaterial({
+      vertexShader: QUAD_VS, fragmentShader: NIGHT_FS, depthTest: false, depthWrite: false,
+      uniforms: { tDiffuse: { value: null }, uMode: { value: 1 }, uGain: { value: 4 }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) } },
+    });
+    this.quad = new FullScreenQuad(this.mat);
+  }
+  setSize(w, h) { this.mat.uniforms.uRes.value.set(w, h); }
+  render(renderer, writeBuffer, readBuffer) {
+    this.mat.uniforms.tDiffuse.value = readBuffer.texture;
+    this.mat.uniforms.uTime.value = performance.now() / 1000;
+    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    this.quad.render(renderer);
+  }
+}
+
 // Interior de cabina: segunda pasada con plano cercano propio, encima del mundo
 class CockpitPass extends Pass {
   constructor() { super(); this.needsSwap = false; this.scene = null; this.camera = null; }
@@ -199,19 +243,21 @@ export class PostFX {
     this.cockpit = new CockpitPass();
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.42, 0.55, 1.0);
     this.output = new OutputPass();
+    this.nightP = new NightPass();
+    this.nightP.enabled = false;
     this.crtP = new CRTPass();
     this.crtP.enabled = false;
     this.crtP.mat.uniforms.uPR.value = pr;
-    for (const p of [this.sceneP, this.ao, this.cockpit, this.bloom, this.output, this.crtP]) this.composer.addPass(p);
+    for (const p of [this.sceneP, this.ao, this.cockpit, this.bloom, this.output, this.nightP, this.crtP]) this.composer.addPass(p);
     this.quality = 'medium';
     this.enabled = true;
   }
 
-  // en calidad baja no hay composer, salvo que el CRT lo necesite (sin bloom ni SSAO)
+  // en calidad baja no hay composer, salvo que el CRT o la visión nocturna lo necesiten (sin bloom ni SSAO)
   setQuality(q) {
     this.quality = q;
     const low = q === 'low';
-    this.enabled = !low || this.crtP.enabled;
+    this.enabled = !low || this.crtP.enabled || this.nightP.enabled;
     this.ao.enabled = !low;
     this.bloom.enabled = !low;
     this.bloom.strength = q === 'high' ? 0.5 : 0.42;
@@ -219,6 +265,14 @@ export class PostFX {
 
   set crt(on) { this.crtP.enabled = on; this.setQuality(this.quality); }
   get crt() { return this.crtP.enabled; }
+
+  // visión nocturna: 0 apagada, 1 verde, 2 térmica; gain sube la ganancia del intensificador
+  setNight(mode, gain = 4) {
+    const on = mode > 0;
+    this.nightP.mat.uniforms.uMode.value = mode;
+    this.nightP.mat.uniforms.uGain.value = gain;
+    if (on !== this.nightP.enabled) { this.nightP.enabled = on; this.setQuality(this.quality); }
+  }
 
   resize(w, h) {
     this.composer.setPixelRatio(this.renderer.getPixelRatio());

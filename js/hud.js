@@ -1,9 +1,9 @@
 // HUD táctico sobre el canvas 3D: retícula, marcadores, adelanto de tiro y flechas fuera de pantalla.
 import * as THREE from 'three';
-import { BULLET_SPEED } from './combat.js?v=33';
-import * as I from './instruments.js?v=33';
+import { BULLET_SPEED } from './combat.js?v=35';
+import * as I from './instruments.js?v=35';
 
-const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _f = new THREE.Vector3();
+const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _f = new THREE.Vector3(), _c = new THREE.Vector3(), _h = new THREE.Vector3();
 const CY = '#3df2ff', RD = '#ff4a3c', AM = '#ffc14d';
 const LABELS = { tank: 'TANQUE', aaa: 'ANTIAÉREO', bunker: 'BÚNKER', truck: 'CAMIÓN', fighter: 'CAZA', drone: 'DRON' };
 const GR = '#62ff86';
@@ -76,6 +76,100 @@ export class TacticalHUD {
     g.shadowBlur = 0; g.clip();
     g.globalAlpha = 0.94; g.drawImage(this.mcv, x, y, size, size);
     g.globalAlpha = 1; g.lineWidth = 2; g.strokeStyle = 'rgba(98,255,134,0.45)'; g.stroke();
+    g.restore();
+  }
+
+  // Visor del casco (modo nocturno): símbolos fijos a la mirada, dibujados sobre
+  // la vista de cabina allá donde se mire. Rumbo de la mirada, velocidad, altura,
+  // horizonte y morro conformes, recuadro de orientación de la cabeza y armas.
+  // s: estado de instrumentos; look: {yaw, pitch} de la cabeza en radianes.
+  hmd(s, camera, fm, look, mode) {
+    const g = this.g, W = this.W, H = this.H, cx = W / 2, cy = H / 2;
+    const col = '#7dff9a', u = Math.min(W, H) / 800;
+    const font = (px) => { g.font = `bold ${Math.round(px * u)}px "Share Tech Mono", monospace`; };
+    const txt = (t, x, y, align = 'center') => {
+      g.textAlign = align; g.textBaseline = 'middle';
+      g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.strokeText(t, x, y);
+      g.fillStyle = col; g.fillText(t, x, y);
+    };
+    const line = (pts, w = 1.6) => { g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); this.stroke(col, w); };
+    g.save();
+    // retícula de la línea de visión
+    const r = 14 * u;
+    line([[cx - r * 2.2, cy], [cx - r * 0.6, cy]]); line([[cx + r * 0.6, cy], [cx + r * 2.2, cy]]);
+    line([[cx, cy - r * 2.2], [cx, cy - r * 0.6]]); line([[cx, cy + r * 0.6], [cx, cy + r * 1.4]]);
+    // horizonte conforme: dos puntos a 2 km, a la altura de los ojos, a ±25° de la mirada
+    camera.getWorldPosition(_c); camera.getWorldDirection(_f);
+    const ya = Math.atan2(_f.x, _f.z);
+    const hp = [];
+    for (const da of [-0.44, 0.44]) {
+      _h.set(_c.x + Math.sin(ya + da) * 2000, _c.y, _c.z + Math.cos(ya + da) * 2000);
+      const o = this.toScreen(_h, camera, { x: 0, y: 0 });
+      if (!o.behind) hp.push([o.x, o.y]);
+    }
+    if (hp.length === 2) {
+      const [[x0, y0], [x1, y1]] = hp, mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+      const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || 1, gap = 60 * u;
+      line([[x0, y0], [mx - dx / L * gap, my - dy / L * gap]], 1.4);
+      line([[mx + dx / L * gap, my + dy / L * gap], [x1, y1]], 1.4);
+    }
+    // morro del aparato: símbolo en W donde apunta; flecha en el borde si queda fuera
+    _f.set(0, 0, -1).applyQuaternion(fm.quat);
+    _h.copy(fm.pos).addScaledVector(_f, 3000);
+    const nose = this.toScreen(_h, camera, { x: 0, y: 0 });
+    if (nose.on && !nose.behind) {
+      const x = nose.x, y = nose.y, k = 9 * u;
+      line([[x - k * 2.6, y], [x - k * 1.3, y], [x - k * 0.7, y + k * 0.8], [x, y], [x + k * 0.7, y + k * 0.8], [x + k * 1.3, y], [x + k * 2.6, y]], 1.6);
+    } else this.arrow(nose, col);
+    // cinta de rumbo de la mirada
+    const hdg = ((s.hdg - look.yaw * 180 / Math.PI) % 360 + 360) % 360;
+    const ty = H * 0.09, tw = W * 0.34, ppd = tw / 60;
+    font(14);
+    for (let a = Math.ceil((hdg - 30) / 5) * 5; a <= hdg + 30; a += 5) {
+      const x = cx + (a - hdg) * ppd, big = a % 10 === 0;
+      line([[x, ty], [x, ty + (big ? 10 : 5) * u]], 1.2);
+      if (a % 30 === 0) { const v = ((a % 360) + 360) % 360; txt({ 0: 'N', 90: 'E', 180: 'S', 270: 'W' }[v] ?? String(v / 10), x, ty - 10 * u); }
+    }
+    // marca del rumbo del morro sobre la cinta
+    let dn = ((s.hdg - hdg + 540) % 360) - 180;
+    const nx = cx + Math.max(-30, Math.min(30, dn)) * ppd;
+    line([[nx - 6 * u, ty + 20 * u], [nx, ty + 13 * u], [nx + 6 * u, ty + 20 * u]], 1.4);
+    font(18);
+    g.fillStyle = 'rgba(0,0,0,0.45)'; g.fillRect(cx - 30 * u, ty + 22 * u, 60 * u, 22 * u);
+    g.beginPath(); g.rect(cx - 30 * u, ty + 22 * u, 60 * u, 22 * u); this.stroke(col, 1.2);
+    txt(String(Math.round(hdg) % 360).padStart(3, '0'), cx, ty + 33 * u);
+    // velocidad y altura a los lados de la retícula
+    const box = (t, x, y, w) => {
+      g.fillStyle = 'rgba(0,0,0,0.45)'; g.fillRect(x - w / 2, y - 13 * u, w, 26 * u);
+      g.beginPath(); g.rect(x - w / 2, y - 13 * u, w, 26 * u); this.stroke(col, 1.2);
+      txt(t, x, y);
+    };
+    font(20);
+    box(String(Math.round(s.ias)), cx - W * 0.17, cy, 70 * u);
+    const radar = s.agl < 1500;
+    box(`${radar ? 'R' : ''}${Math.round(radar ? s.agl : s.alt)}`, cx + W * 0.17, cy, 84 * u);
+    font(14);
+    txt('KT', cx - W * 0.17, cy + 24 * u);
+    txt(`${s.vs > 0 ? '+' : ''}${Math.round(s.vs)} FPM`, cx + W * 0.17, cy + 24 * u);
+    txt(`${s.heli ? 'TRQ' : 'THR'} ${Math.round(s.throttle * 100)}%`, cx - W * 0.17, cy - 26 * u);
+    txt(`G ${s.g.toFixed(1)}`, cx + W * 0.17, cy - 26 * u);
+    // orientación de la cabeza: recuadro que representa ±180° de giro y la mirada como punto
+    const bw = 130 * u, bh = 44 * u, bx = cx, by = H * 0.8;
+    g.beginPath(); g.rect(bx - bw / 2, by - bh / 2, bw, bh); this.stroke(col, 1.2);
+    line([[bx, by - bh / 2], [bx, by - bh / 2 + 6 * u]], 1.2); line([[bx, by + bh / 2], [bx, by + bh / 2 - 6 * u]], 1.2);
+    const lx = bx - (look.yaw / Math.PI) * bw / 2, ly = by - (look.pitch / (Math.PI / 2)) * bh / 2;
+    g.beginPath(); g.arc(lx, ly, 4 * u, 0, Math.PI * 2); g.fillStyle = col; g.fill();
+    // armas y blanco
+    font(15);
+    if (s.armed) txt(`GUN ${s.ammo}${s.gunMode ? ' ' + s.gunMode : ''}  ·  ${s.wsel}`, cx, by + bh / 2 + 18 * u);
+    const t = s.tgt;
+    if (t) {
+      const rng = t.range < 1000 ? `${Math.round(t.range)} M` : `${(t.range / 1000).toFixed(1)} KM`;
+      txt(`TGT ${t.id}  ${rng}  ${t.locked ? 'LOCK' : t.far ? 'LEJOS' : 'FIJANDO'}`, cx, by + bh / 2 + 38 * u);
+    }
+    if (s.warn && (performance.now() / 300 | 0) % 2 === 0) { font(28); txt(s.warn, cx, cy - H * 0.16); }
+    font(13);
+    txt(`VISOR · ${mode === 2 ? 'TÉRMICA' : 'VERDE'}`, W * 0.04, H * 0.06, 'left');
     g.restore();
   }
 

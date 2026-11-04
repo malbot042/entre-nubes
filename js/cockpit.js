@@ -1,8 +1,8 @@
 // Interiores de cabina detallados: estructura, mandos animados, piloto
 // (piernas y guantes), paneles con instrumentos dibujados en canvas y HUD.
 import * as THREE from 'three';
-import * as I from './instruments.js?v=33';
-import { mat, glassMat } from './models.js?v=33';
+import * as I from './instruments.js?v=35';
+import { mat, glassMat } from './models.js?v=35';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const DEG = Math.PI / 180;
@@ -160,7 +160,14 @@ export class Cockpit {
     // cuerpo del proyector
     // (en el helicóptero el proyector va integrado en el guardasol para no tapar el panel)
     if (!heli) this.box(size * 1.05, 0.05, 0.12, x, bot - 0.025, z + 0.05, this.M.bezel).userData.noShadow = true;
-    this.hud = { cv, g: cv.getContext('2d'), tex, heli, x, y, z, size, geo: { ppd: 1, bx: 256, by: 256 } };
+    this.hud = { cv, g: cv.getContext('2d'), tex, heli, x, y, z, size, geo: { ppd: 1, bx: 256, by: 256 }, mat: m };
+  }
+
+  // con el visor del casco activo el HUD pasa a segundo plano: se atenúa
+  setHudDim(dim) {
+    if (!this.hud || this.hud.dim === dim) return;
+    this.hud.dim = dim;
+    this.hud.mat.color.setRGB(...(dim ? [0.35, 0.42, 0.35] : [2.2, 2.6, 2.2]));
   }
 
   // Guardasol: tapa sobre el panel con borde redondeado hacia el piloto
