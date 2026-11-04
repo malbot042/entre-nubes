@@ -7,7 +7,7 @@
   <meta name="description" content="Simulador y arcade de vuelo 3D en el navegador: F-14, F-16, F/A-18, A-10, Apache y LHX con estética low-poly retro, render moderno, combate aéreo y ataque a tierra.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=35">
+  <link rel="stylesheet" href="css/style.css?v=38">
   <script type="importmap">
   {
     "imports": {
@@ -164,37 +164,41 @@
   <div id="win-help" class="window hidden">
     <div class="win-head">Controles <button class="close">✕</button></div>
     <div class="win-body help">
-      <table>
-        <tr><th colspan="2">Avión</th></tr>
-        <tr><td>W / S · ↑ / ↓</td><td>Bajar / subir el morro</td></tr>
-        <tr><td>A / D · ← / →</td><td>Alabear (con pilotaje asistido el viraje se mantiene al soltar; pulsa el lado contrario para nivelar)</td></tr>
-        <tr><td>Q / E</td><td>Timón (y dirección en tierra)</td></tr>
-        <tr><td>Shift / Ctrl · R / F</td><td>Más / menos potencia</td></tr>
-        <tr><td>1 … 0</td><td>Potencia 10 % … 100 %</td></tr>
-        <tr><td>G · X · B</td><td>Tren · flaps · frenos/aerofreno (mantener) — <b>P</b> freno de mano</td></tr>
-        <tr><th colspan="2">Helicóptero</th></tr>
-        <tr><td>Shift / Ctrl · R / F</td><td>Colectivo (50 % = estacionario)</td></tr>
-        <tr><td>W / S</td><td>Avanzar / retroceder (al soltar, frena hasta quedarse quieto)</td></tr>
-        <tr><td>A / D</td><td>Girar el morro a izquierda / derecha</td></tr>
-        <tr><td>Q / E</td><td>Desplazarse de lado a izquierda / derecha</td></tr>
-        <tr><th colspan="2">Armas (siempre disponibles; en vuelo libre hay blancos de entrenamiento)</th></tr>
-        <tr><td>Espacio · Z</td><td>Cañón · arma seleccionada (cohetes o misiles)</td></tr>
-        <tr><td>Y · I</td><td>Cambiar el arma de Z · pantalla de armamento y tiro (modo del cañón, salva de cohetes)</td></tr>
-        <tr><td>J</td><td>Mapa táctico: zoom con la rueda, arrastrar para moverlo, clic en un blanco para designarlo</td></tr>
-        <tr><td>Tab</td><td>Siguiente blanco. El sistema elige solo el más centrado, lo identifica y lo fija si mantienes el morro hacia él</td></tr>
-        <tr><td>Blanco fijado</td><td>El cañón apunta solo si el blanco está cerca del morro, los cohetes salen guiados y se pueden lanzar misiles (aire-tierra contra vehículos, aire-aire contra aeronaves)</td></tr>
-        <tr><th colspan="2">Cámara</th></tr>
-        <tr><td>C</td><td>Cabina / exterior / pasada</td></tr>
-        <tr><td>K</td><td>Visor del casco: visión nocturna verde → térmica → apagado. Los datos siguen a la mirada y el HUD del aparato pasa a segundo plano</td></tr>
-        <tr><td>Arrastrar ratón · rueda</td><td>Mirar alrededor · en cabina, acercarse al HUD y a las pantallas; fuera, distancia de la cámara</td></tr>
-        <tr><td>V / doble clic</td><td>Centrar la vista</td></tr>
-        <tr><td>Teclado numérico</td><td>Vistas rápidas (4 6 8 2 5)</td></tr>
-        <tr><th colspan="2">General</th></tr>
-        <tr><td>L · N · M</td><td>Luces · nuevo destino · silencio</td></tr>
-        <tr><td>T · O · H</td><td>Clima · ajustes · ayuda</td></tr>
-        <tr><td>Esc · Enter</td><td>Pausa · reiniciar tras accidente</td></tr>
-      </table>
-      <p>Con mando: sticks para mandos de vuelo, gatillos para potencia, RB cañón, LB cohetes, cruceta derecha siguiente blanco, A tren, B frenos, Y cámara.</p>
+      <section>
+        <h4>Lo esencial · avión y helicóptero</h4>
+        <table>
+          <tr><td>W / S</td><td>Morro abajo / arriba. Se mantiene al soltar</td></tr>
+          <tr><td>A / D</td><td>Inclinar para girar. Se mantiene; la contraria nivela</td></tr>
+          <tr><td>Shift / Ctrl</td><td>Más / menos potencia (helicóptero: 50 % flota)</td></tr>
+          <tr><td>Espacio · Z</td><td>Cañón · arma elegida</td></tr>
+          <tr><td>C · Esc</td><td>Cámara · pausa</td></tr>
+        </table>
+        <p>En el helicóptero, morro abajo acelera y nivelado se queda quieto en el aire.</p>
+      </section>
+      <section>
+        <h4>Combate</h4>
+        <table>
+          <tr><td>Tab</td><td>Siguiente blanco (se elige y se fija solo)</td></tr>
+          <tr><td>Y · I</td><td>Cambiar de arma · armamento y tiro</td></tr>
+          <tr><td>J</td><td>Mapa táctico: clic en un blanco para elegirlo</td></tr>
+          <tr><td>K</td><td>Visor del casco: verde → térmica → apagado</td></tr>
+        </table>
+        <p>Con un blanco fijado el cañón apunta solo y los cohetes y misiles van guiados.</p>
+      </section>
+      <section>
+        <h4>Automático</h4>
+        <p>Tren, flaps, frenos y luces funcionan solos. Si quieres hacerlo a mano: <b>G</b> tren, <b>X</b> flaps, <b>P</b> freno de estacionamiento, <b>L</b> luces.</p>
+        <h4>Más teclas</h4>
+        <table>
+          <tr><td>Q / E</td><td>Timón / pedales</td></tr>
+          <tr><td>1 … 0 · B</td><td>Potencia directa · frenar (mantener)</td></tr>
+          <tr><td>Ratón · rueda</td><td>Mirar · acercar (V centra)</td></tr>
+          <tr><td>N · M</td><td>Nuevo destino · silencio</td></tr>
+          <tr><td>T · O · H</td><td>Clima · ajustes · ayuda</td></tr>
+          <tr><td>Enter</td><td>Reiniciar tras accidente</td></tr>
+        </table>
+        <p>Las ventanas (ayuda, mapa, armamento, ajustes, clima) pausan el juego.<br>Mando: sticks, gatillos de potencia, RB cañón, LB arma, cruceta derecha blanco, Y cámara.</p>
+      </section>
     </div>
   </div>
 
@@ -222,6 +226,6 @@
   <div id="version" data-version></div>
   <div id="loading" class="overlay hidden"><div class="spinner"></div><div id="loading-text">Generando terreno…</div></div>
   <noscript>Este simulador necesita JavaScript y WebGL.</noscript>
-  <script type="module" src="js/main.js?v=35"></script>
+  <script type="module" src="js/main.js?v=38"></script>
 </body>
 </html>

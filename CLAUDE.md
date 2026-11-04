@@ -16,18 +16,22 @@ python3 -m http.server 8000   # then open http://localhost:8000
 
 There are no tests, linter or build. To verify changes, load the page in a browser and check the console. `window.__entreNubes` exposes `{ state, scene, camera, env, combat, targeting, … }` for debugging (for example `state.fm` is the flight model and `state.world` the terrain).
 
-**Cache busting:** every local import carries `?v=N` (`from './world.js?v=35'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
+**Cache busting:** every local import carries `?v=N` (`from './world.js?v=38'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
 
 The game version shown to players (fixed `#version` label in the bottom-right corner on every screen, console, `window.__entreNubes.version`) is this same N, read from `import.meta.url` in `main.js`. Bumping the cache number therefore publishes a new version: bump it with every change that gets committed, and mention it in the commit message.
 
 ```
-sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=35'#g" js/*.js
-sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=35\"#g" index.html
+sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=38'#g" js/*.js
+sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=38\"#g" index.html
 ```
 
 ## Architecture
 
 `js/main.js` is the orchestrator: settings (localStorage key `entrenubes2`), menu/showroom scene, input (keyboard, mouse head-look, gamepad), cameras, warnings/mission chip, the game loop and flight start/restart. Flights always start on the origin runway threshold, helicopters included.
+
+**Simplified controls (owner's request):** `autoSystems()` in `main.js` handles the parking brake (released when throttle > 30 %), gear (up after takeoff, down on approach), flaps (half at low speed, up when fast) and night lights. Pressing G, X, P or L disables that automation for the flight (`state.manual`), except the safety gear-down on approach. The help window is a compact three-column grid; keep it short.
+
+**Screens pause the game:** each frame computes `frozen` = pause, tactical map, or any visible `.window` (help, settings, weather, armory, result). Physics, combat and timers stop while frozen, and Esc closes the open screen before it pauses.
 
 Main loop per frame: input → fixed-step physics (`STEP = 1/120`, accumulated) → combat/mission update → physics events (`crash`, `touchdown`) → model animation → camera → `world.update` (chunk streaming with a time budget) → `env.update` → cockpit instrument redraw → HUD → audio → `fx.render` (post-processing) → tactical marker overlay.
 
@@ -71,7 +75,11 @@ Main loop per frame: input → fixed-step physics (`STEP = 1/120`, accumulated) 
 - `physics.js`: `FlightModel`.
   - Planes use a lift/drag model with auto-trim toward level-flight angle of attack.
   - Helicopters are arcade-style: 50 % collective = hover, tilt is compensated, attitude-command cyclic, and drag is computed in ground axes so pitching forward accelerates instead of sinking.
-  - `input.assist` (the "pilotaje asistido" setting, on by default) changes behaviour. Planes: roll keys move a held bank target (`bankHold`, 70°/s, ±75°) that stays when released (the owner wants the turn kept until the opposite key is pressed; a ±4° detent snaps to wings level), plus coordinated-turn feed-forward and stall protection. Helicopters (`arcadeHeli`) are classic arcade, as the owner chose: W/S fly forwards/backwards only while held and brake to a hover on release, A/D yaw the nose, with the rate divided by `1 + vf/30` so turns widen with speed. The velocity is re-projected onto the new heading each step, and lateral grip absorbs the sideways part, so the path follows the nose with a few degrees of drift instead of rotating rigidly. Q/E strafe sideways. Nothing is held: releasing the keys levels and stops the helicopter. Its visual attitude is deliberately calm (the owner found it disorienting): pitch follows only the W/S input (−6°/+5°), and bank is at most 15°. Assisted planes skip the bank-angle logic above 60° pitch, because Euler roll flips during loops.
+  - `input.assist` (the "pilotaje asistido" setting, on by default) changes behaviour. Planes: roll keys move a held bank target (`bankHold`, 70°/s, ±75°) that stays when released (the owner wants the turn kept until the opposite key is pressed; a ±4° detent snaps to wings level), plus coordinated-turn feed-forward and stall protection. Helicopters (`arcadeHeli`) fly like the planes, which the owner asked for explicitly after rejecting several arcade schemes.
+    - W/S move a held nose attitude (`hPitch`, −15°…+10°). A/D move a held bank (`hBank`, ±40°). Both stay when released. Pressing the opposite key stops exactly at level (the `*Stop` flags), so going past level needs a fresh press.
+    - Everything derives from the smoothed attitude (`visPitch`/`visRoll`). The forward speed target is proportional to nose-down tilt (15° = `vmax`; level = hover; nose up = slow reverse). The bank gives a coordinated turn ×3, capped, and also turns at hover. Q/E are pedals.
+    - The velocity is re-projected onto the new heading, and lateral grip removes drift.
+  - Assisted planes skip the bank-angle logic above 60° pitch, because Euler roll flips during loops.
   - Ground contact handles crash rules and tire/skid friction.
 - `environment.js`: sky shader, sun and moon, stars, fog, instanced low-poly clouds plus an overcast layer, rain and snow, lightning, and wind. Weather presets are in `WEATHER`; transitions are interpolated.
 - `audio.js`: WebAudio-synthesized sounds only (no audio files). Initialized on the first user gesture.

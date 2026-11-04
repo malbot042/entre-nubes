@@ -1,23 +1,23 @@
 // Entre Nubes — bucle principal, cámaras, entrada, HUD y menús.
 import * as THREE from 'three';
-import { AIRCRAFT, AIRCRAFT_BY_ID } from './aircraft.js?v=35';
-import { buildModel } from './models.js?v=35';
-import { Cockpit } from './cockpit.js?v=35';
-import { FlightModel } from './physics.js?v=35';
-import { World, CHUNK } from './world.js?v=35';
-import { Environment, WEATHER } from './environment.js?v=35';
-import { AudioEngine } from './audio.js?v=35';
-import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=35';
-import { PostFX, CRT_CURVE } from './postfx.js?v=35';
-import { Particles } from './effects.js?v=35';
-import { Combat } from './combat.js?v=35';
-import { MODES, createMission, isCombat, Training } from './missions.js?v=35';
-import { Targeting } from './targeting.js?v=35';
-import { TacMap } from './tacmap.js?v=35';
-import { Armory } from './armory.js?v=35';
-import { TacticalHUD } from './hud.js?v=35';
-import { NavMap } from './navmap.js?v=35';
-import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=35';
+import { AIRCRAFT, AIRCRAFT_BY_ID } from './aircraft.js?v=38';
+import { buildModel } from './models.js?v=38';
+import { Cockpit } from './cockpit.js?v=38';
+import { FlightModel } from './physics.js?v=38';
+import { World, CHUNK } from './world.js?v=38';
+import { Environment, WEATHER } from './environment.js?v=38';
+import { AudioEngine } from './audio.js?v=38';
+import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=38';
+import { PostFX, CRT_CURVE } from './postfx.js?v=38';
+import { Particles } from './effects.js?v=38';
+import { Combat } from './combat.js?v=38';
+import { MODES, createMission, isCombat, Training } from './missions.js?v=38';
+import { Targeting } from './targeting.js?v=38';
+import { TacMap } from './tacmap.js?v=38';
+import { Armory } from './armory.js?v=38';
+import { TacticalHUD } from './hud.js?v=38';
+import { NavMap } from './navmap.js?v=38';
+import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=38';
 
 // ---------------- Ajustes persistentes ----------------
 const DEFAULTS = { aircraft: 'f16', time: '13', weather: 'clear', dist: 'medium', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, assist: true, edges: true, crt: true, weapons: null, best: {} };
@@ -308,7 +308,7 @@ async function startFlight(keepWorld = false) {
   $('hud').classList.remove('hidden');
   toast(`${state.origin.icao} ${state.origin.name}  →  ${state.dest.icao} ${state.dest.name}`, '', 5000);
   toast('Espacio: cañón · Z: cohetes · Tab: cambiar de blanco', '', 6000);
-  if (!mission?.startInAir) toast(state.spec.type === 'heli' ? 'Colectivo con Shift/Ctrl o R/F: al 50 % se mantiene en el aire' : 'Gases con Shift o R, suelta frenos con P', '', 5000);
+  if (!mission?.startInAir) toast(state.spec.type === 'heli' ? 'Colectivo con Shift/Ctrl o R/F: al 50 % se mantiene en el aire' : 'Gases con Shift: los frenos se sueltan solos. Tren, flaps y luces son automáticos', '', 5000);
 }
 
 // Contexto compartido con los modos de juego
@@ -466,6 +466,7 @@ function spawnAircraft(id, start) {
   state.chaseYaw = fm.euler.y;
   state.arrived = false; state.flightTime = 0; state.distFlown = 0; state.lastTouch = null;
   state.lights = env.night > 0.4;
+  state.manual = { gear: false, flaps: false, brakes: false, lights: false };
   setCamera(state.cam === 'flyby' ? 'chase' : state.cam);
   setEdgesVisible(settings.edges);
   audio.setAircraft(spec);
@@ -562,7 +563,12 @@ addEventListener('keydown', (e) => {
   keys.add(k);
   const fm = state.fm, spec = state.spec;
   switch (k) {
-    case 'Escape': if (armory.isOpen) armory.close(); else if (tacMap.isOpen) tacMap.close(); else togglePause(); break;
+    case 'Escape': {
+      // Esc cierra primero la pantalla abierta (ayuda, mapa, armamento…) y si no hay ninguna, pausa
+      const win = document.querySelector('.window:not(.hidden)');
+      if (armory.isOpen) armory.close(); else if (tacMap.isOpen) tacMap.close(); else if (win) win.classList.add('hidden'); else togglePause();
+      break;
+    }
     case 'KeyJ': tacMap.toggle(); break;
     case 'KeyI': armory.toggle(); break;
     case 'KeyK': cycleVisor(); break;
@@ -574,14 +580,14 @@ addEventListener('keydown', (e) => {
     case 'KeyG':
       if (!spec.gearFixed && !(spec.type === 'heli' && !spec.gearRetract)) {
         if (fm.onGround && fm.gearDown) { toast('No puedes subir el tren en tierra', 'bad'); break; }
-        fm.gearDown = !fm.gearDown; audio.gearMotor(); toast(fm.gearDown ? 'Tren abajo' : 'Tren arriba');
+        fm.gearDown = !fm.gearDown; state.manual.gear = true; audio.gearMotor(); toast(fm.gearDown ? 'Tren abajo' : 'Tren arriba');
       }
       break;
     case 'KeyX':
-      if (spec.flaps) { fm.flaps = fm.flaps >= 1 ? 0 : fm.flaps + 0.5; audio.click(); toast(`Flaps ${Math.round(fm.flaps * 100)}%`); }
+      if (spec.flaps) { fm.flaps = fm.flaps >= 1 ? 0 : fm.flaps + 0.5; state.manual.flaps = true; audio.click(); toast(`Flaps ${Math.round(fm.flaps * 100)}%`); }
       break;
-    case 'KeyP': fm.brakes = !fm.brakes; audio.click(); toast(fm.brakes ? 'Freno de estacionamiento puesto' : 'Freno de estacionamiento quitado'); break;
-    case 'KeyL': state.lights = !state.lights; audio.click(); toast(state.lights ? 'Luces encendidas' : 'Luces apagadas'); break;
+    case 'KeyP': fm.brakes = !fm.brakes; state.manual.brakes = fm.brakes; audio.click(); toast(fm.brakes ? 'Freno de estacionamiento puesto' : 'Freno de estacionamiento quitado'); break;
+    case 'KeyL': state.lights = !state.lights; state.manual.lights = true; audio.click(); toast(state.lights ? 'Luces encendidas' : 'Luces apagadas'); break;
     case 'KeyC': setCamera({ cockpit: 'chase', chase: 'flyby', flyby: 'cockpit' }[state.cam]); break;
     case 'KeyV': state.headYawT = 0; state.headPitchT = defPitch(); state.lean = 0; state.orbitYaw = 0; state.orbitPitch = 0.15; break;
     case 'KeyT': openWin('win-weather'); break;
@@ -934,7 +940,10 @@ function loop() {
     return;
   }
   const fm = state.fm;
-  if (!state.paused) {
+  // el juego se congela en pausa y con cualquier pantalla abierta (ayuda, mapa,
+  // armamento, ajustes, clima, resultado)
+  const frozen = state.paused || tacMap.isOpen || !!document.querySelector('.window:not(.hidden)');
+  if (!frozen) {
     readInput(dt);
     if (settings.timeflow) { env.setTime(env.hour + dt * 60 / 3600); if (Math.random() < 0.02) updateTimeLabel(); }
     acc += dt;
@@ -970,13 +979,7 @@ function loop() {
     }
     fm.events.length = 0;
     checkArrival();
-    // ayuda: baja el tren automáticamente en aproximación
-    const sp = state.spec;
-    const retract = sp.type === 'plane' ? !sp.gearFixed : !!sp.gearRetract;
-    if (!fm.gearDown && !fm.crashed && !fm.onGround && retract && fm.vel.y < -0.5 && fm.ias < (sp.type === 'heli' ? 20 : sp.vs * 1.7)) {
-      const agl = fm.pos.y - sp.gearH - Math.max(0, state.world.groundHeight(fm.pos.x, fm.pos.z));
-      if (agl < (sp.type === 'heli' ? 25 : 90)) { fm.gearDown = true; audio.gearMotor(); toast('Tren bajado automáticamente'); }
-    }
+    autoSystems();
     if (fm.crashed) {
       const e = fm.euler;
       fm.quat.setFromEuler(new THREE.Euler(lerp(e.x, -0.1, dt), e.y, lerp(e.z, 0.5, dt), 'YXZ'));
@@ -986,21 +989,21 @@ function loop() {
   animateModel(dt);
   updateCamera(dt);
   const camWorld = camera.getWorldPosition(_v1);
-  state.world.update(camWorld, state.paused ? 0 : dt, 6);
+  state.world.update(camWorld, frozen ? 0 : dt, 6);
   state.world.updateLights(env.night, camWorld);
   state.navMap.update(fm.pos.x, fm.pos.z, 1.5);
   tacMap.update(dt);
   armory.update(dt);
   for (const ap of state.world.airports) if (ap.windsock) ap.windsock.rotation.y = Math.atan2(-env.wind.z, env.wind.x) + ap.hdg;
-  env.update(state.paused ? 0 : dt, { position: camWorld }, fm.pos);
+  env.update(frozen ? 0 : dt, { position: camWorld }, fm.pos);
   computeInstState();
   if (state.cam === 'cockpit') { state.cockpit.update(dt, inst, state.input, camera.position); state.cockpit.setNight(env.night); }
   updateHUD(dt);
-  updateEffects(state.paused ? 0 : dt);
+  updateEffects(frozen ? 0 : dt);
   audio.update({
     rpm: fm.rpm, throttle: fm.throttle, ab: fm.ab, cockpit: state.cam === 'cockpit', camDist: camera.getWorldPosition(_v2).distanceTo(fm.pos),
     airspeed: fm.ias, rain: env.w.rain, windStrength: env.w.wind, onGround: fm.onGround, groundSpeed: Math.hypot(fm.vel.x, fm.vel.z),
-    warn: !!state.warn && !state.paused, warnType: fm.stall ? 'stall' : 'gear', crashed: fm.crashed,
+    warn: !!state.warn && !frozen, warnType: fm.stall ? 'stall' : 'gear', crashed: fm.crashed,
   });
   // visor del casco: filtro nocturno, HUD atenuado y blancos calientes en térmica
   const visor = state.cam === 'cockpit' && !fm.crashed ? state.visor : 0;
@@ -1020,6 +1023,34 @@ function loop() {
     tacHud.flightHUD(dt, inst, camera);
     tacHud.mapOverlay(dt, inst, state.navMap);
   }
+}
+
+// Sistemas automáticos para simplificar los mandos: freno de estacionamiento,
+// tren, flaps y luces. G, X, P y L siguen funcionando, y tocarlas a mano desactiva
+// ese automatismo durante el vuelo (salvo bajar el tren en aproximación, que es
+// una ayuda de seguridad y actúa siempre).
+function autoSystems() {
+  const fm = state.fm, sp = state.spec, man = state.manual, heli = sp.type === 'heli';
+  if (fm.crashed) return;
+  const agl = fm.pos.y - sp.gearH - Math.max(0, state.world.groundHeight(fm.pos.x, fm.pos.z));
+  // el freno de estacionamiento se suelta solo al dar gas
+  if (fm.brakes && fm.onGround && fm.throttle > 0.3 && !man.brakes) { fm.brakes = false; toast('Frenos sueltos'); }
+  // tren: arriba tras despegar, abajo en aproximación
+  const retract = heli ? !!sp.gearRetract : !sp.gearFixed;
+  if (retract && !fm.onGround) {
+    if (fm.gearDown && !man.gear && fm.vel.y > 1 && agl > (heli ? 20 : 40) && fm.ias > (heli ? 15 : sp.vs * 1.3)) {
+      fm.gearDown = false; audio.gearMotor(); toast('Tren arriba');
+    } else if (!fm.gearDown && fm.vel.y < -0.5 && fm.ias < (heli ? 20 : sp.vs * 1.7) && agl < (heli ? 25 : 90)) {
+      fm.gearDown = true; audio.gearMotor(); toast('Tren abajo');
+    }
+  }
+  // flaps a la mitad a baja velocidad (despegue y aterrizaje), recogidos al acelerar
+  if (sp.flaps && !man.flaps) {
+    if (fm.flaps > 0 && fm.ias > sp.vs * 1.7) fm.flaps = 0;
+    else if (fm.flaps === 0 && fm.ias < sp.vs * 1.45 && (fm.onGround || agl < 400)) fm.flaps = 0.5;
+  }
+  // luces encendidas de noche
+  if (!man.lights) state.lights = env.night > 0.4;
 }
 
 function checkArrival() {

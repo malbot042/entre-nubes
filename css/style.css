@@ -166,11 +166,16 @@ button.primary:hover { filter: brightness(1.1); }
 .btn-grid button { background: rgba(255,255,255,0.05); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 9px; font-size: 15px; font-weight: 600; cursor: pointer; }
 .btn-grid button.active { background: var(--accent); color: #04121c; }
 #win-help { width: min(580px, calc(100vw - 32px)); }
-.help table { width: 100%; border-collapse: collapse; font-size: 15px; }
+#win-help { width: min(980px, calc(100vw - 24px)); max-height: calc(100vh - 24px); }
+.win-body { min-height: 0; }
+#win-help .help { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 6px 20px; align-items: start; }
+.help section { display: flex; flex-direction: column; gap: 6px; }
+.help h4 { margin: 4px 0 0; color: var(--accent2); letter-spacing: 2px; font-size: 12px; text-transform: uppercase; }
+.help table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .help td { padding: 3px 6px; border-bottom: 1px solid rgba(255,255,255,0.06); }
 .help td:first-child { font-family: var(--mono); color: var(--accent); white-space: nowrap; font-size: 13px; }
-.help th { text-align: left; color: var(--accent2); padding-top: 10px; letter-spacing: 2px; font-size: 12px; text-transform: uppercase; }
-.help p { color: var(--muted); font-size: 14px; }
+.help p { color: var(--muted); font-size: 13px; margin: 0; line-height: 1.45; }
+.help p b { color: var(--accent); font-family: var(--mono); }
 #pause { display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.45); }
 .pause-panel { padding: 24px; display: flex; flex-direction: column; gap: 9px; width: min(320px, calc(100vw - 32px)); }
 .pause-panel h2 { margin: 0 0 6px; letter-spacing: 8px; text-align: center; font-size: 26px; }

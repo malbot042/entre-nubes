@@ -1,7 +1,7 @@
 // HUD táctico sobre el canvas 3D: retícula, marcadores, adelanto de tiro y flechas fuera de pantalla.
 import * as THREE from 'three';
-import { BULLET_SPEED } from './combat.js?v=35';
-import * as I from './instruments.js?v=35';
+import { BULLET_SPEED } from './combat.js?v=38';
+import * as I from './instruments.js?v=38';
 
 const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _f = new THREE.Vector3(), _c = new THREE.Vector3(), _h = new THREE.Vector3();
 const CY = '#3df2ff', RD = '#ff4a3c', AM = '#ffc14d';

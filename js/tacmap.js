@@ -5,8 +5,8 @@
 // El relieve combina tres cachés: una amplia de 96 km alrededor del avión, la
 // del mapa móvil de cabina (32 km) y una de detalle que sigue a la vista y se
 // recalcula al hacer zoom.
-import { ReliefCache } from './navmap.js?v=35';
-import { KINDS } from './combat.js?v=35';
+import { ReliefCache } from './navmap.js?v=38';
+import { KINDS } from './combat.js?v=38';
 
 const TAU = Math.PI * 2;
 const MIN_MPP = 2.5, MAX_MPP = 240;           // metros por píxel de pantalla

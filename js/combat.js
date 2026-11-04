@@ -2,7 +2,7 @@
 // unidades enemigas e IA, y blancos de entrenamiento que no disparan.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { clamp, lerp } from './util.js?v=35';
+import { clamp, lerp } from './util.js?v=38';
 
 const G = 9.81;
 const BULLET_V = 1050, MAX_BULLETS = 500;

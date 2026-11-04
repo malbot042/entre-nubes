@@ -1,6 +1,6 @@
 // Modelo de vuelo simplificado pero creíble para aviones y helicópteros.
 import * as THREE from 'three';
-import { clamp, lerp, smoothstep, DEG } from './util.js?v=35';
+import { clamp, lerp, smoothstep, DEG } from './util.js?v=38';
 
 const G = 9.81;
 const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _q = new THREE.Quaternion(), _qi = new THREE.Quaternion();
@@ -248,40 +248,57 @@ export class FlightModel {
     this.aoa = 0; this.stall = false;
     const ax = this.vel.x - env.wind.x, az = this.vel.z - env.wind.z;
     const airborne = !this.onGround || this.throttle > 0.52;
-    const push = airborne ? -input.pitch : 0; // W = +1
     const A = 11, vmax = s.vmax;
-    // Arcade clásico: todo vuelve a reposo al soltar.
-    // A/D: girar el morro. Cuanto más rápido, más abierto el giro (a 40 m/s, la mitad
-    // de rápido que en estacionario), así no se mueve a tirones a alta velocidad.
+    // Pilotaje como el del avión (pilotaje asistido): las teclas mueven la actitud
+    // y la actitud se mantiene al soltar; la pulsación contraria la devuelve (cerca
+    // de nivelado se ajusta sola a 0). De la actitud sale todo lo demás, suave:
+    //  · W/S inclinan el morro (hasta 15° abajo y 10° arriba): morro abajo acelera
+    //    y mantiene la velocidad que corresponde a esa inclinación; nivelado, se
+    //    detiene en estacionario; morro arriba, retrocede despacio.
+    //  · A/D alabean (hasta 40°): con el helicóptero inclinado gira hacia ese lado,
+    //    también en estacionario; nivelado, vuela recto.
+    //  · Q/E giran el morro directamente (pedales).
+    // Al cruzar el nivelado con la tecla pulsada se queda en 0: para pasar al otro
+    // lado hay que soltar y volver a pulsar (así nivelar no se pasa de largo).
+    const hold = (key, inp, rate, lo, hi, detent) => {
+      const prev = this[key] || 0, stop = key + 'Stop';
+      if (Math.abs(inp) < 0.05) { this[stop] = false; return Math.abs(prev) < detent * DEG ? 0 : prev; }
+      if (this[stop]) return 0;
+      const v = clamp(prev + inp * rate * DEG * dt, lo * DEG, hi * DEG);
+      if (prev * v < 0 || (prev !== 0 && v === 0)) { this[stop] = true; return 0; }
+      return v;
+    };
+    if (!airborne) { this.hPitch = 0; this.hBank = 0; }
+    else {
+      this.hPitch = hold('hPitch', input.pitch, 14, -15, 10, 1.5);
+      this.hBank = hold('hBank', -input.roll, 35, -40, 40, 3);
+    }
+    // actitud visible: sigue a la mantenida con suavidad
+    this.visPitch = lerp(this.visPitch || 0, this.hPitch, Math.min(1, dt * 3));
+    this.visRoll = lerp(this.visRoll || 0, this.hBank, Math.min(1, dt * 3));
+    // velocidad objetivo según el morro: 15° abajo = velocidad máxima
+    const tilt = -this.visPitch / (15 * DEG);
+    const vfT = tilt >= 0 ? tilt * vmax : tilt * 1.5 * 12;
+    // giro: viraje coordinado ×3 (más rápido cuanto más lento se va, con un tope)
+    // más los pedales
     const vf0 = -ax * Math.sin(yaw) - az * Math.cos(yaw);
-    const yawT = -input.roll * 0.55 * s.yaw * DEG / (1 + Math.max(vf0, 0) / 30);
-    this.yawRate = (this.yawRate || 0) + (yawT - (this.yawRate || 0)) * Math.min(1, dt * 7);
+    const bankTurn = clamp(3 * G * Math.tan(-this.visRoll) / Math.max(Math.abs(vf0), 18), -0.7 * s.yaw * DEG, 0.7 * s.yaw * DEG);
+    const yawT = -(bankTurn + input.yaw * 0.45 * s.yaw * DEG);
+    this.yawRate = (this.yawRate || 0) + (yawT - (this.yawRate || 0)) * Math.min(1, dt * 5);
     if (this.onGround && !airborne) this.yawRate *= 0.2;
     const newYaw = yaw + this.yawRate * dt;
-    // la velocidad se descompone en los ejes nuevos: al girar el morro aparece una
-    // componente lateral que el agarre va absorbiendo, y la trayectoria sigue al
-    // morro con un poco de inercia en vez de girar con él como sobre raíles
+    // la velocidad se descompone en los ejes nuevos y el agarre lateral absorbe el
+    // derrape: la trayectoria sigue al morro con un poco de inercia
     const nfx = -Math.sin(newYaw), nfz = -Math.cos(newYaw), nrx = Math.cos(newYaw), nrz = -Math.sin(newYaw);
     let vf = ax * nfx + az * nfz, vr = ax * nrx + az * nrz;
-    // W/S: avanzar / retroceder mientras se pulsan; al soltar frena hasta el estacionario
-    const vfT = push > 0 ? push * vmax : push * 12;
-    const acc = clamp((vfT - vf) * (push ? 0.5 : 0.6), -A * 1.3, A);
+    const acc = clamp((vfT - vf) * 0.45, -A * 1.3, A);
     vf += acc * dt;
-    // Q/E: desplazamiento lateral (hasta 14 m/s); sin mando, agarre lateral
-    const vrT = airborne ? input.yaw * 14 : 0;
-    vr += (vrT - vr) * (1 - Math.exp(-dt * (vrT ? 2.2 : 3)));
+    vr -= vr * (1 - Math.exp(-dt * 3));
     // colectivo: 50 % = estacionario; 100 % sube a 11 m/s, 0 % baja a 6 m/s
     const c = this.throttle - 0.5;
     const vyT = c >= 0 ? c * 2 * 11 : c * 2 * 6;
     let vy = this.vel.y - env.wind.y;
     vy += (vyT - vy) * Math.min(1, dt * 2.5);
-    // actitud visual suave y sin sorpresas (prima la comodidad sobre el realismo):
-    // el morro solo depende de la tecla pulsada (W baja 6°, S sube 5°) y el alabeo
-    // acompaña al giro y al desplazamiento lateral con un máximo de 15°
-    const pitchT = push > 0 ? -6 * DEG * push : -5 * DEG * push;
-    const rollT = clamp(-input.roll * smoothstep(3, 25, vf) * 15 * DEG - input.yaw * 8 * DEG, -15 * DEG, 15 * DEG);
-    this.visPitch = lerp(this.visPitch || 0, this.onGround && !airborne ? 0 : pitchT, Math.min(1, dt * 2.5));
-    this.visRoll = lerp(this.visRoll || 0, this.onGround && !airborne ? 0 : rollT, Math.min(1, dt * 3));
     _e.set(this.visPitch, newYaw, this.visRoll, 'YXZ');
     this.quat.setFromEuler(_e);
     this.vel.set(nfx * vf + nrx * vr + env.wind.x, vy + env.wind.y, nfz * vf + nrz * vr + env.wind.z);
