@@ -7,7 +7,7 @@
   <meta name="description" content="Simulador y arcade de vuelo 3D en el navegador: F-14, F-16, F/A-18, A-10, Apache y LHX con estética low-poly retro, render moderno, combate aéreo y ataque a tierra.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=38">
+  <link rel="stylesheet" href="css/style.css?v=39">
   <script type="importmap">
   {
     "imports": {
@@ -119,7 +119,7 @@
         </label>
         <label class="switch"><input type="checkbox" id="set-shadows" checked><span></span> Sombras</label>
         <label class="switch"><input type="checkbox" id="set-edges" checked><span></span> Contornos marcados (aristas)</label>
-        <label class="switch"><input type="checkbox" id="set-crt" checked><span></span> Efecto monitor CRT <em>curvatura, líneas de barrido y fósforo</em></label>
+        <label class="switch"><input type="checkbox" id="set-crt" checked><span></span> Efecto monitor CRT <em>líneas de barrido y fósforo, sin curvar la imagen</em></label>
         <label>Campo de visión <output id="fov-val">72°</output><input type="range" id="set-fov" min="50" max="95" step="1" value="72"></label>
       </div>
       <div class="group">
@@ -226,6 +226,6 @@
   <div id="version" data-version></div>
   <div id="loading" class="overlay hidden"><div class="spinner"></div><div id="loading-text">Generando terreno…</div></div>
   <noscript>Este simulador necesita JavaScript y WebGL.</noscript>
-  <script type="module" src="js/main.js?v=38"></script>
+  <script type="module" src="js/main.js?v=39"></script>
 </body>
 </html>

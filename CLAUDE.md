@@ -16,13 +16,13 @@ python3 -m http.server 8000   # then open http://localhost:8000
 
 There are no tests, linter or build. To verify changes, load the page in a browser and check the console. `window.__entreNubes` exposes `{ state, scene, camera, env, combat, targeting, … }` for debugging (for example `state.fm` is the flight model and `state.world` the terrain).
 
-**Cache busting:** every local import carries `?v=N` (`from './world.js?v=38'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
+**Cache busting:** every local import carries `?v=N` (`from './world.js?v=39'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
 
 The game version shown to players (fixed `#version` label in the bottom-right corner on every screen, console, `window.__entreNubes.version`) is this same N, read from `import.meta.url` in `main.js`. Bumping the cache number therefore publishes a new version: bump it with every change that gets committed, and mention it in the commit message.
 
 ```
-sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=38'#g" js/*.js
-sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=38\"#g" index.html
+sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=39'#g" js/*.js
+sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=39\"#g" index.html
 ```
 
 ## Architecture
@@ -91,7 +91,7 @@ Main loop per frame: input → fixed-step physics (`STEP = 1/120`, accumulated) 
 - Weapon selection: each aircraft's `ARMS` entry (`aircraft.js`) has a gun, rockets, and optional `ag` (air-to-ground) and `aa` (air-to-air) missiles. Space always fires the gun; Z fires the weapon in `combat.prefs.sel` (Y cycles it). `combat.prefs` also holds the gun mode (`burst`: 0.4 s per press), automatic gun aim (`aim`) and the rocket salvo (`salvo`, 0 = continuous); `main.js` saves it in `settings.weapons`.
   - Missiles need a locked target of the right kind (`aa` air, `ag` ground). They are homing projectiles in `combat.rockets` with their own thrust, turn rate, life and a direct-hit `dmg`. Refusals are reported through `combat.notify`.
   - `armory.js` is the weapons screen (I or the toolbar button). It shows a top-view diagram of the stores, a card per weapon with its firing options and readiness against the current target, and the target status. Like the map's target list, its buttons act on `pointerdown`.
-- `combat.js` (ballistics, rockets, missiles, ground units, AI fighters and drones), `hud.js` (screen-space target markers and the designated-target box; the gun reticle is suppressed in cockpit view), `postfx.js` (bloom + SSAO, disabled at low quality; optional final CRT monitor pass, setting `crt`, on by default, which keeps the composer alive at low quality without bloom/SSAO. Its barrel curvature `CRT_CURVE` is inverted in `hud.js` `toScreen` so tactical markers stay on their targets), `effects.js` (particles).
+- `combat.js` (ballistics, rockets, missiles, ground units, AI fighters and drones), `hud.js` (screen-space target markers and the designated-target box; the gun reticle is suppressed in cockpit view), `postfx.js` (bloom + SSAO, disabled at low quality; optional final CRT monitor pass, setting `crt`, on by default, which keeps the composer alive at low quality without bloom/SSAO. It is flat on purpose: the owner rejected the barrel curvature), `effects.js` (particles).
 
 Saved settings are migrated on load in `main.js`: unknown aircraft or mode ids fall back to defaults, and a `schema` number forces one-off resets.
 

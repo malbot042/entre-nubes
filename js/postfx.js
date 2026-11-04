@@ -109,22 +109,16 @@ class AOPass extends Pass {
   }
 }
 
-// Monitor CRT: curvatura de tubo, líneas de barrido, máscara de fósforo RGB,
-// aberración cromática en los bordes, viñeta y un leve parpadeo. Va después de
-// OutputPass, así que trabaja ya en sRGB y escribe tal cual en pantalla.
-export const CRT_CURVE = [0.03, 0.04];
+// Monitor CRT plano (el dueño no quiere la imagen curvada): líneas de barrido,
+// máscara de fósforo RGB, aberración cromática en los bordes, viñeta y un leve
+// parpadeo. Va después de OutputPass, así que trabaja ya en sRGB y escribe tal
+// cual en pantalla.
 const CRT_FS = `
-uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uPR; uniform float uTime; uniform vec2 uCurve;
+uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uPR; uniform float uTime;
 varying vec2 vUv;
 float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)))*43758.5453); }
 void main(){
-  vec2 q = vUv*2.0-1.0;
-  q += q*(q.yx*q.yx)*uCurve;
-  vec2 uv = q*0.5+0.5;
-  // bordes del tubo redondeados y suavizados
-  vec2 e = min(uv, 1.0-uv)*uRes/uPR;
-  float edge = smoothstep(0.0, 2.5, min(e.x, e.y));
-  if (edge <= 0.0) { gl_FragColor = vec4(0.0,0.0,0.0,1.0); return; }
+  vec2 uv = vUv;
   vec2 d = uv-0.5;
   vec2 ca = d*(0.0015 + dot(d,d)*0.006);
   vec3 c = vec3(texture2D(tDiffuse, uv-ca).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv+ca).b);
@@ -139,7 +133,7 @@ void main(){
   float vig = pow(16.0*uv.x*uv.y*(1.0-uv.x)*(1.0-uv.y), 0.16);
   c *= vig*1.14*(1.0 + 0.012*sin(uTime*95.0));
   c += (hash(gl_FragCoord.xy + fract(uTime)*91.0)-0.5)*0.025;
-  gl_FragColor = vec4(c*edge, 1.0);
+  gl_FragColor = vec4(c, 1.0);
 }`;
 
 class CRTPass extends Pass {
@@ -147,7 +141,7 @@ class CRTPass extends Pass {
     super();
     this.mat = new THREE.ShaderMaterial({
       vertexShader: QUAD_VS, fragmentShader: CRT_FS, depthTest: false, depthWrite: false,
-      uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uPR: { value: 1 }, uTime: { value: 0 }, uCurve: { value: new THREE.Vector2(...CRT_CURVE) } },
+      uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uPR: { value: 1 }, uTime: { value: 0 } },
     });
     this.quad = new FullScreenQuad(this.mat);
   }

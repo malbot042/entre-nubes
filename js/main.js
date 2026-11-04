@@ -1,23 +1,23 @@
 // Entre Nubes — bucle principal, cámaras, entrada, HUD y menús.
 import * as THREE from 'three';
-import { AIRCRAFT, AIRCRAFT_BY_ID } from './aircraft.js?v=38';
-import { buildModel } from './models.js?v=38';
-import { Cockpit } from './cockpit.js?v=38';
-import { FlightModel } from './physics.js?v=38';
-import { World, CHUNK } from './world.js?v=38';
-import { Environment, WEATHER } from './environment.js?v=38';
-import { AudioEngine } from './audio.js?v=38';
-import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=38';
-import { PostFX, CRT_CURVE } from './postfx.js?v=38';
-import { Particles } from './effects.js?v=38';
-import { Combat } from './combat.js?v=38';
-import { MODES, createMission, isCombat, Training } from './missions.js?v=38';
-import { Targeting } from './targeting.js?v=38';
-import { TacMap } from './tacmap.js?v=38';
-import { Armory } from './armory.js?v=38';
-import { TacticalHUD } from './hud.js?v=38';
-import { NavMap } from './navmap.js?v=38';
-import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=38';
+import { AIRCRAFT, AIRCRAFT_BY_ID } from './aircraft.js?v=39';
+import { buildModel } from './models.js?v=39';
+import { Cockpit } from './cockpit.js?v=39';
+import { FlightModel } from './physics.js?v=39';
+import { World, CHUNK } from './world.js?v=39';
+import { Environment, WEATHER } from './environment.js?v=39';
+import { AudioEngine } from './audio.js?v=39';
+import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=39';
+import { PostFX } from './postfx.js?v=39';
+import { Particles } from './effects.js?v=39';
+import { Combat } from './combat.js?v=39';
+import { MODES, createMission, isCombat, Training } from './missions.js?v=39';
+import { Targeting } from './targeting.js?v=39';
+import { TacMap } from './tacmap.js?v=39';
+import { Armory } from './armory.js?v=39';
+import { TacticalHUD } from './hud.js?v=39';
+import { NavMap } from './navmap.js?v=39';
+import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=39';
 
 // ---------------- Ajustes persistentes ----------------
 const DEFAULTS = { aircraft: 'f16', time: '13', weather: 'clear', dist: 'medium', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, assist: true, edges: true, crt: true, weapons: null, best: {} };
@@ -68,7 +68,6 @@ const tacMap = new TacMap({
   onSelect: () => audio.click(),
 });
 const tacHud = new TacticalHUD(document.getElementById('hud-canvas'));
-tacHud.curve = settings.crt ? CRT_CURVE : null;
 
 // Escena del hangar (menú)
 const menuScene = new THREE.Scene();
@@ -235,7 +234,7 @@ function bindSettings() {
   const u = $('set-units'); u.value = settings.units; u.onchange = () => { settings.units = u.value; save(); };
   const inv = $('set-invert'); inv.checked = settings.invert; inv.onchange = () => { settings.invert = inv.checked; save(); };
   const ed = $('set-edges'); ed.checked = settings.edges; ed.onchange = () => { settings.edges = ed.checked; save(); setEdgesVisible(settings.edges); };
-  const crt = $('set-crt'); crt.checked = settings.crt; crt.onchange = () => { settings.crt = crt.checked; save(); fx.crt = crt.checked; tacHud.curve = crt.checked ? CRT_CURVE : null; };
+  const crt = $('set-crt'); crt.checked = settings.crt; crt.onchange = () => { settings.crt = crt.checked; save(); fx.crt = crt.checked; };
   const as = $('set-assist'); as.checked = settings.assist; as.onchange = () => { settings.assist = as.checked; $('opt-assist').checked = as.checked; save(); toast(settings.assist ? 'Pilotaje asistido activado' : 'Pilotaje asistido desactivado'); };
   const fu = $('set-fuel'); fu.checked = settings.fuel; fu.onchange = () => { settings.fuel = fu.checked; save(); if (state.fm) state.fm.infiniteFuel = fu.checked; };
   const ms = $('set-mouse'); ms.value = settings.mouse; ms.oninput = () => { settings.mouse = +ms.value; save(); };
