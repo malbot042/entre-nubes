@@ -1,23 +1,23 @@
 // Entre Nubes — bucle principal, cámaras, entrada, HUD y menús.
 import * as THREE from 'three';
-import { AIRCRAFT, AIRCRAFT_BY_ID } from './aircraft.js?v=41';
-import { buildModel } from './models.js?v=41';
-import { Cockpit } from './cockpit.js?v=41';
-import { FlightModel } from './physics.js?v=41';
-import { World, CHUNK } from './world.js?v=41';
-import { Environment, WEATHER } from './environment.js?v=41';
-import { AudioEngine } from './audio.js?v=41';
-import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=41';
-import { PostFX } from './postfx.js?v=41';
-import { Particles } from './effects.js?v=41';
-import { Combat } from './combat.js?v=41';
-import { MODES, createMission, isCombat, Training } from './missions.js?v=41';
-import { Targeting } from './targeting.js?v=41';
-import { TacMap } from './tacmap.js?v=41';
-import { Armory } from './armory.js?v=41';
-import { TacticalHUD } from './hud.js?v=41';
-import { NavMap } from './navmap.js?v=41';
-import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=41';
+import { AIRCRAFT, AIRCRAFT_BY_ID } from './aircraft.js?v=42';
+import { buildModel } from './models.js?v=42';
+import { Cockpit } from './cockpit.js?v=42';
+import { FlightModel } from './physics.js?v=42';
+import { World, CHUNK } from './world.js?v=42';
+import { Environment, WEATHER } from './environment.js?v=42';
+import { AudioEngine } from './audio.js?v=42';
+import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=42';
+import { PostFX } from './postfx.js?v=42';
+import { Particles } from './effects.js?v=42';
+import { Combat } from './combat.js?v=42';
+import { MODES, createMission, isCombat, Training } from './missions.js?v=42';
+import { Targeting } from './targeting.js?v=42';
+import { TacMap } from './tacmap.js?v=42';
+import { Armory } from './armory.js?v=42';
+import { TacticalHUD } from './hud.js?v=42';
+import { NavMap } from './navmap.js?v=42';
+import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=42';
 
 // ---------------- Ajustes persistentes ----------------
 const DEFAULTS = { aircraft: 'f16', time: '13', weather: 'clear', dist: 'medium', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, assist: true, edges: true, crt: true, weapons: null, best: {} };

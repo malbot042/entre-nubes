@@ -57,6 +57,9 @@ kbd { font-family: var(--mono); font-size: 12px; padding: 1px 5px; border: 1px s
 .tm-row b { font-weight: 400; color: var(--text); }
 .tm-row em { font-style: normal; color: var(--muted); text-align: right; }
 .tm-empty { color: var(--muted); font-size: 13px; }
+.tm-kills { margin-top: 8px; }
+.tm-row.dead { color: #ff8a7c; cursor: default; opacity: 0.85; }
+.tm-row.dead:hover { background: none; }
 #tacmap-center { background: rgba(255,255,255,0.06); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 7px; cursor: pointer; font: inherit; font-size: 13px; }
 #tacmap-center:hover { border-color: var(--accent); color: var(--accent); }
 .tm-help { color: var(--muted); font-size: 11px; line-height: 1.4; }

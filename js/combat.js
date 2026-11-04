@@ -2,7 +2,7 @@
 // unidades enemigas e IA, y blancos de entrenamiento que no disparan.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { clamp, lerp } from './util.js?v=41';
+import { clamp, lerp } from './util.js?v=42';
 
 const G = 9.81;
 const BULLET_V = 1050, MAX_BULLETS = 500;
@@ -96,6 +96,9 @@ export class Combat {
     this.enemies = [];
     this.bullets = [];
     this.rockets = [];
+    // historial para el mapa táctico: recorridos e impactos de cohetes y misiles
+    // y lugares de los blancos abatidos (con el tiempo de combate en que ocurrieron)
+    this.history = { shots: [], kills: [] }; this.time = 0;
     this.score = 0; this.kills = 0; this.frame = 0; this.gunT = 0; this.rocketT = 0; this.rocketSide = 1; this.gunIdx = 0;
     this.player = null;
     this.tracers = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ fog: false, toneMapped: false }), MAX_BULLETS);
@@ -137,6 +140,7 @@ export class Combat {
     for (const r of this.rockets) this.scene.remove(r.mesh);
     this.enemies.length = 0; this.bullets.length = 0; this.rockets.length = 0;
     this.tracers.count = 0; this.score = 0; this.kills = 0;
+    this.history.shots.length = 0; this.history.kills.length = 0;
   }
   // retira una unidad sin destruirla (blancos de entrenamiento que quedan lejos)
   discard(e) {
@@ -281,7 +285,7 @@ export class Combat {
     _b.set((Math.random() - 0.5) * 0.008, (Math.random() - 0.5) * 0.008, -1).normalize().applyQuaternion(fm.quat);
     const mesh = new THREE.Mesh(this.rocketGeo, this.rocketMat);
     mesh.position.copy(_a); this.scene.add(mesh);
-    this.rockets.push({ mesh, pos: mesh.position, vel: fm.vel.clone().addScaledVector(_b, 90), dir: _b.clone(), age: 0, burn: 1.7, target: tg && tg.locked ? tg.target : null });
+    this.rockets.push({ mesh, pos: mesh.position, vel: fm.vel.clone().addScaledVector(_b, 90), dir: _b.clone(), age: 0, burn: 1.7, target: tg && tg.locked ? tg.target : null, trail: [[_a.x, _a.z]], trailT: 0 });
     this.audio.rocket();
   }
 
@@ -303,7 +307,7 @@ export class Combat {
     mesh.position.copy(_a); this.scene.add(mesh);
     this.rockets.push({
       mesh, pos: mesh.position, vel: fm.vel.clone().addScaledVector(_b, 25), dir: _b.clone(), age: 0, target: t, missile: true,
-      burn: 3.2, thrust: air ? 330 : 240, turn: air ? 6 : 3.5, life: 14, dmg: 450,
+      burn: 3.2, thrust: air ? 330 : 240, turn: air ? 6 : 3.5, life: 14, dmg: 450, trail: [[_a.x, _a.z]], trailT: 0,
     });
     this.audio.rocket();
     this.notify?.(`${a.short} lanzado`, 'good');
@@ -324,6 +328,9 @@ export class Combat {
     e.dead = true; e.deadT = 0;
     const K = KINDS[e.kind];
     this.score += K.score; this.kills++;
+    const hk = this.history.kills;
+    hk.push({ x: e.pos.x, z: e.pos.z, kind: e.kind, air: e.air, t: this.time });
+    if (hk.length > 100) hk.shift();
     this.fx.explosion(e.pos, e.air ? 2 : e.kind === 'bunker' ? 2.4 : 1.5);
     this.audio.explosion();
     if (e.air) { this.remove(e); }
@@ -343,7 +350,7 @@ export class Combat {
 
   // ---- bucle ----
   update(dt, world) {
-    this.frame++;
+    this.frame++; this.time += dt;
     const p = this.player;
     if (p) p.hitFlash = Math.max(0, p.hitFlash - dt * 2.5);
     for (let i = 0; i < this.enemies.length; i++) {
@@ -511,6 +518,9 @@ export class Combat {
       _a.copy(r.pos); // punto anterior
       r.pos.addScaledVector(r.vel, dt);
       r.dir.copy(r.vel).divideScalar(sp || 1);
+      // recorrido para el mapa: un punto cada 0,15 s
+      r.trailT += dt;
+      if (r.trailT > 0.15) { r.trailT = 0; r.trail.push([r.pos.x, r.pos.z]); }
       _m.lookAt(ZERO, r.dir, UP); r.mesh.quaternion.setFromRotationMatrix(_m);
       if (burning) {
         const n = 3;
@@ -543,6 +553,10 @@ export class Combat {
           const d = e.pos.distanceTo(r.pos);
           if (d < 24) this.damage(e, 130 * (1 - d / 34));
         }
+        const hs = this.history.shots;
+        r.trail.push([r.pos.x, r.pos.z]);
+        hs.push({ path: r.trail, x: r.pos.x, z: r.pos.z, missile: !!r.missile, hit: !!hit, t: this.time });
+        if (hs.length > 80) hs.shift();
         this.scene.remove(r.mesh);
         this.rockets.splice(i, 1);
       }

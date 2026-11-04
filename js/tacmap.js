@@ -7,8 +7,8 @@
 // hacer zoom (mientras la amplia se calcula, se usa la del mapa de cabina).
 // La elevación se ve en los tintes (con su leyenda), las curvas de nivel y la
 // cota del punto bajo el cursor.
-import { ReliefCache, tint } from './navmap.js?v=41';
-import { KINDS } from './combat.js?v=41';
+import { ReliefCache, tint } from './navmap.js?v=42';
+import { KINDS } from './combat.js?v=42';
 
 const TAU = Math.PI * 2;
 const MIN_MPP = 2.5, MAX_MPP = 240;           // metros por píxel de pantalla
@@ -195,6 +195,7 @@ export class TacMap {
       g.strokeStyle = COL.dest; g.lineWidth = 2.5 * dpr;
       g.beginPath(); g.moveTo(mx, my); g.lineTo(dx, dy); g.stroke();
     }
+    this.drawHistory(fs);
     // blancos
     const sel = this.targeting.target;
     for (const e of this.combat.enemies) {
@@ -262,6 +263,63 @@ export class TacMap {
     this.label(fmtD(bar), bx + bar * k + 8 * dpr, by - 3 * dpr, fs, '#fff');
   }
 
+  // Recorridos de cohetes y misiles (los antiguos se desvanecen), puntos de impacto
+  // (naranja si alcanzaron un blanco, gris si no) y blancos abatidos (✕ roja).
+  drawHistory(fs) {
+    const g = this.g, dpr = this.dpr, c = this.combat, now = c.time;
+    const path = (pts, head) => {
+      g.beginPath();
+      pts.forEach(([x, z], i) => { const [sx, sy] = this.toS(x, z); if (i) g.lineTo(sx, sy); else g.moveTo(sx, sy); });
+      if (head) { const [sx, sy] = this.toS(head.x, head.z); g.lineTo(sx, sy); }
+      g.stroke();
+    };
+    const star = (sx, sy, r, col) => {
+      g.strokeStyle = col; g.lineWidth = 2 * dpr; g.beginPath();
+      for (let k = 0; k < 4; k++) { const a = k * Math.PI / 4; g.moveTo(sx - Math.cos(a) * r, sy - Math.sin(a) * r); g.lineTo(sx + Math.cos(a) * r, sy + Math.sin(a) * r); }
+      g.stroke();
+    };
+    g.lineCap = 'round';
+    for (const sh of c.history.shots) {
+      const a = Math.max(0.2, 1 - (now - sh.t) / 180);
+      g.globalAlpha = a;
+      g.strokeStyle = sh.missile ? '#ffffff' : '#ffc98a'; g.lineWidth = (sh.missile ? 1.8 : 1) * dpr;
+      g.setLineDash(sh.missile ? [] : [3 * dpr, 4 * dpr]);
+      path(sh.path);
+      g.setLineDash([]);
+      const [sx, sy] = this.toS(sh.x, sh.z);
+      star(sx, sy, (sh.missile ? 7 : 4.5) * dpr, sh.hit ? '#ff8a2a' : '#9aa4ae');
+      g.globalAlpha = 1;
+    }
+    // en vuelo: recorrido hasta la posición actual y cabeza brillante
+    for (const r of c.rockets) {
+      g.strokeStyle = r.missile ? '#ffffff' : '#ffc98a'; g.lineWidth = (r.missile ? 2 : 1.2) * dpr;
+      path(r.trail, r.pos);
+      const [sx, sy] = this.toS(r.pos.x, r.pos.z);
+      g.fillStyle = r.missile ? '#ffffff' : '#ffc98a';
+      g.beginPath(); g.arc(sx, sy, (r.missile ? 3.5 : 2.5) * dpr, 0, TAU); g.fill();
+    }
+    // abatidos
+    for (const k of c.history.kills) {
+      const [sx, sy] = this.toS(k.x, k.z), r = 6 * dpr;
+      g.strokeStyle = '#000'; g.lineWidth = 4.5 * dpr;
+      g.beginPath(); g.moveTo(sx - r, sy - r); g.lineTo(sx + r, sy + r); g.moveTo(sx + r, sy - r); g.lineTo(sx - r, sy + r); g.stroke();
+      g.strokeStyle = '#ff4a3c'; g.lineWidth = 2.2 * dpr; g.stroke();
+      if (this.mpp < 15) this.label(`${KINDS[k.kind]?.label || k.kind} abatido`, sx + 10 * dpr, sy, fs * 0.8, '#ff9a8c');
+    }
+    // leyenda
+    const lx = 14 * dpr, ly = 44 * dpr;
+    g.strokeStyle = '#ffffff'; g.lineWidth = 1.8 * dpr; g.beginPath(); g.moveTo(lx, ly); g.lineTo(lx + 18 * dpr, ly); g.stroke();
+    this.label('misil', lx + 24 * dpr, ly, fs * 0.85, '#dfe8f0');
+    g.strokeStyle = '#ffc98a'; g.lineWidth = dpr; g.setLineDash([3 * dpr, 4 * dpr]);
+    g.beginPath(); g.moveTo(lx, ly + 16 * dpr); g.lineTo(lx + 18 * dpr, ly + 16 * dpr); g.stroke(); g.setLineDash([]);
+    this.label('cohete', lx + 24 * dpr, ly + 16 * dpr, fs * 0.85, '#dfe8f0');
+    star(lx + 9 * dpr, ly + 32 * dpr, 5 * dpr, '#ff8a2a');
+    this.label('impacto', lx + 24 * dpr, ly + 32 * dpr, fs * 0.85, '#dfe8f0');
+    g.strokeStyle = '#ff4a3c'; g.lineWidth = 2.2 * dpr; g.beginPath();
+    g.moveTo(lx + 4 * dpr, ly + 43 * dpr); g.lineTo(lx + 14 * dpr, ly + 53 * dpr); g.moveTo(lx + 14 * dpr, ly + 43 * dpr); g.lineTo(lx + 4 * dpr, ly + 53 * dpr); g.stroke();
+    this.label('abatido', lx + 24 * dpr, ly + 48 * dpr, fs * 0.85, '#dfe8f0');
+  }
+
   drawElevation(fm, fs) {
     const g = this.g, dpr = this.dpr, H = this.cv.height, W = this.cv.width;
     const x = 14 * dpr, top = H - 200 * dpr, bh = 140 * dpr, bw = 14 * dpr, maxH = 1400;
@@ -300,9 +358,14 @@ export class TacMap {
     const tg = this.targeting, sel = tg.target;
     const alive = this.combat.enemies.filter(e => !e.dead).map(e => ({ e, d: e.pos.distanceTo(fm.pos) })).sort((a, b) => a.d - b.d);
     this.rows = alive.map(a => a.e);
-    const html = alive.length ? alive.map(({ e, d }, i) =>
+    let html = alive.length ? alive.map(({ e, d }, i) =>
       `<div class="tm-row${e === sel ? ' sel' : ''}${e.training ? ' trn' : ''}" data-i="${i}"><i>${e.air ? '▲' : '◆'}</i><span>${KINDS[e.kind]?.label || e.kind}</span><b>${fmtD(d)}</b><em>${brg(e.pos.x - fm.pos.x, e.pos.z - fm.pos.z)}°</em></div>`).join('')
       : '<div class="tm-empty">Sin blancos en la zona</div>';
+    // abatidos recientes, del más nuevo al más antiguo
+    const kills = this.combat.history.kills, now = this.combat.time;
+    const ago = (t) => { const s = Math.max(0, Math.round(now - t)); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min`; };
+    html += `<div class="tm-list-title tm-kills">Abatidos · ${kills.length}</div>` + kills.slice(-8).reverse().map(k =>
+      `<div class="tm-row dead"><i>✕</i><span>${KINDS[k.kind]?.label || k.kind}</span><b>${fmtD(Math.hypot(k.x - fm.pos.x, k.z - fm.pos.z))}</b><em>${ago(k.t)}</em></div>`).join('');
     if (html !== this.listHtml) { this.listEl.innerHTML = html; this.listHtml = html; }
     if (sel && !sel.dead) {
       const d = sel.pos.distanceTo(fm.pos);
