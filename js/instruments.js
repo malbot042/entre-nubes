@@ -496,6 +496,110 @@ function hudFooter(g, W, H, s) {
   if (s.warn && (performance.now() / 300 | 0) % 2 === 0) {
     hudFont(g, 30); g.fillText(s.warn, W / 2, H * 0.7);
   }
+  hudTarget(g, W, H, s);
+}
+
+// Blanco designado en el HUD: línea de situación hacia él cuando queda fuera
+// del campo del HUD y una línea de datos con identificación, distancia y fijación
+function hudTarget(g, W, H, s) {
+  const t = s.tgt;
+  if (!t) return;
+  if (t.off > 9) {
+    const a = Math.atan2(-t.el, t.az), cx = W / 2, cy = H / 2, r0 = H * 0.09, r1 = H * 0.2;
+    const ex = cx + Math.cos(a) * r1, ey = cy + Math.sin(a) * r1;
+    g.beginPath(); g.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); g.lineTo(ex, ey); g.stroke();
+    g.save(); g.translate(ex, ey); g.rotate(a);
+    g.beginPath(); g.moveTo(8, 0); g.lineTo(-6, -7); g.lineTo(-6, 7); g.closePath(); g.fill();
+    g.restore();
+    hudFont(g, 15); g.textAlign = 'center';
+    g.fillText(`${Math.round(t.off)}°`, cx + Math.cos(a) * (r1 + 22), cy + Math.sin(a) * (r1 + 22));
+  }
+  hudFont(g, 16); g.textAlign = 'center';
+  const rng = t.range < 1000 ? `${Math.round(t.range)} M` : `${(t.range / 1000).toFixed(1)} KM`;
+  const st = t.locked ? (t.gunAuto ? 'LOCK · GUN AUTO' : 'LOCK') : 'FIJANDO';
+  g.fillText(`TGT ${t.id}  ${rng}  ${st}`, W / 2, H * 0.79);
+  if (!t.locked) {
+    g.strokeRect(W * 0.4, H * 0.81, W * 0.2, 6);
+    g.fillRect(W * 0.4, H * 0.81, W * 0.2 * t.lockT, 6);
+  }
+}
+
+// Pantalla TGT: sistema de localización, identificación y fijación.
+// Arriba, abanico de ±60° respecto al morro con los contactos (▲ aéreo,
+// ■ terrestre; huecos los de entrenamiento); abajo, la ficha del blanco.
+const TG = '#3dff7a', TA = '#ffc14d', TR = '#ff5a48';
+export function targetPage(g, x, y, w, h, s) {
+  const t = s.tgt, list = s.contacts || [];
+  const f = (px) => { g.font = `bold ${Math.round(px)}px "Share Tech Mono", monospace`; };
+  const ox = x + w / 2, oy = y + h * 0.6, R = h * 0.5;
+  // escala: la menor que contenga el blanco designado
+  const maxR = s.tgtRange || 8000;
+  let scale = maxR;
+  if (t) for (const sc of [1000, 2000, 4000, 8000, 12000]) if (sc >= t.range * 1.15) { scale = Math.min(sc, maxR); break; }
+  const k = R / scale;
+  g.strokeStyle = TG; g.fillStyle = TG; g.lineWidth = 1.5; g.textAlign = 'center'; g.textBaseline = 'middle';
+  // abanico
+  g.globalAlpha = 0.5;
+  for (const fr of [0.5, 1]) { g.beginPath(); g.arc(ox, oy, R * fr, -Math.PI / 2 - 60 * DEG, -Math.PI / 2 + 60 * DEG); g.stroke(); }
+  for (const a of [-60, -30, 0, 30, 60]) {
+    g.setLineDash(a ? [3, 5] : []);
+    g.beginPath(); g.moveTo(ox, oy); g.lineTo(ox + Math.sin(a * DEG) * R, oy - Math.cos(a * DEG) * R); g.stroke();
+  }
+  g.setLineDash([]); g.globalAlpha = 1;
+  f(h * 0.045);
+  g.fillText(`${(scale / 2000).toFixed(scale < 2000 ? 1 : 0)}`, ox + R * 0.5 * Math.sin(60 * DEG) + 12, oy - R * 0.5 * Math.cos(60 * DEG));
+  g.fillText(`${scale / 1000}`, ox + R * Math.sin(60 * DEG) + 12, oy - R * Math.cos(60 * DEG));
+  // avión propio
+  g.beginPath(); g.moveTo(ox, oy - 8); g.lineTo(ox - 6, oy + 6); g.lineTo(ox + 6, oy + 6); g.closePath(); g.fill();
+  // contactos
+  for (const c of list) {
+    if (c.range > scale * 1.02) continue;
+    const az = Math.max(-64, Math.min(64, c.az)), d = c.range * k;
+    const px = ox + Math.sin(az * DEG) * d, py = oy - Math.cos(az * DEG) * d;
+    const sel = c.e === s.tgtTarget, col = c.e.air ? TR : TA, sz = 5;
+    g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 1.6;
+    g.beginPath();
+    if (c.e.air) { g.moveTo(px, py - sz); g.lineTo(px + sz, py + sz * 0.8); g.lineTo(px - sz, py + sz * 0.8); g.closePath(); }
+    else g.rect(px - sz * 0.8, py - sz * 0.8, sz * 1.6, sz * 1.6);
+    if (c.e.training) g.stroke(); else g.fill();
+    if (sel) {
+      g.strokeStyle = TG; g.lineWidth = 2;
+      g.strokeRect(px - 10, py - 10, 20, 20);
+      if (t && t.locked) { g.beginPath(); g.moveTo(px, py - 16); g.lineTo(px + 16, py); g.lineTo(px, py + 16); g.lineTo(px - 16, py); g.closePath(); g.stroke(); }
+    }
+  }
+  g.strokeStyle = TG; g.fillStyle = TG;
+  // cabecera
+  f(h * 0.05); g.textAlign = 'left';
+  g.fillText('TGT', x + w * 0.04, y + h * 0.06);
+  g.textAlign = 'right';
+  g.fillText(`ESC ${scale / 1000} KM`, x + w * 0.96, y + h * 0.06);
+  // ficha del blanco
+  const by = y + h * 0.69;
+  g.globalAlpha = 0.6; g.beginPath(); g.moveTo(x + w * 0.04, by - h * 0.02); g.lineTo(x + w * 0.96, by - h * 0.02); g.stroke(); g.globalAlpha = 1;
+  g.textAlign = 'left'; f(h * 0.055);
+  if (!t) {
+    g.fillText(list.length ? 'SIN BLANCO · TAB: SELECCIONAR' : 'BUSCANDO · SIN CONTACTOS', x + w * 0.05, by + h * 0.04);
+    return;
+  }
+  const rng = t.range < 1000 ? `${Math.round(t.range)} M` : `${(t.range / 1000).toFixed(1)} KM`;
+  g.fillText(`${t.idx}/${t.n}  ${t.id}`, x + w * 0.05, by + h * 0.035);
+  f(h * 0.05);
+  const side = Math.abs(t.az) < 1 ? '' : t.az > 0 ? ' DCHA' : ' IZDA';
+  g.fillText(`DIST ${rng}   AZ ${Math.round(Math.abs(t.az))}°${side}`, x + w * 0.05, by + h * 0.1);
+  g.fillText(t.air ? `ALT ${Math.round(t.alt)} FT` : `ELEV ${Math.round(t.el)}°`, x + w * 0.05, by + h * 0.16);
+  // estado de fijación
+  const sy = by + h * 0.215;
+  if (t.locked) {
+    g.fillStyle = TR; g.fillRect(x + w * 0.05, sy - h * 0.03, w * 0.9, h * 0.06);
+    g.fillStyle = '#000'; g.textAlign = 'center'; f(h * 0.05);
+    g.fillText(t.gunAuto ? 'FIJADO · CAÑÓN AUTO' : 'FIJADO · COHETES GUIADOS', x + w / 2, sy + 1);
+  } else {
+    g.strokeRect(x + w * 0.05, sy - h * 0.03, w * 0.9, h * 0.06);
+    g.fillRect(x + w * 0.05, sy - h * 0.03, w * 0.9 * t.lockT, h * 0.06);
+    g.fillStyle = t.lockT > 0.5 ? '#000' : TG; g.textAlign = 'center'; f(h * 0.045);
+    g.fillText(t.off < 60 ? 'FIJANDO… MORRO AL BLANCO' : 'GIRA HACIA EL BLANCO', x + w / 2, sy + 1);
+  }
 }
 
 // HUD de caza: escalera de cabeceo y marcador de trayectoria conformes

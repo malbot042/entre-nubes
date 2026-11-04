@@ -1,11 +1,13 @@
 // HUD táctico sobre el canvas 3D: retícula, marcadores, adelanto de tiro y flechas fuera de pantalla.
 import * as THREE from 'three';
-import { BULLET_SPEED } from './combat.js?v=23';
-import * as I from './instruments.js?v=23';
+import { BULLET_SPEED } from './combat.js?v=27';
+import * as I from './instruments.js?v=27';
 
 const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _f = new THREE.Vector3();
 const CY = '#3df2ff', RD = '#ff4a3c', AM = '#ffc14d';
-const LABELS = { tank: 'TANQUE', aaa: 'ANTIAÉREO', bunker: 'BÚNKER', truck: 'CAMIÓN' };
+const LABELS = { tank: 'TANQUE', aaa: 'ANTIAÉREO', bunker: 'BÚNKER', truck: 'CAMIÓN', fighter: 'CAZA', drone: 'DRON' };
+const GR = '#62ff86';
+const fmtD = (d) => d < 1000 ? Math.round(d) + ' m' : (d / 1000).toFixed(1) + ' km';
 
 export class TacticalHUD {
   constructor(canvas) {
@@ -95,7 +97,7 @@ export class TacticalHUD {
     this.stroke(color); g.restore();
   }
 
-  draw(camera, { fm, markers, armed, hitFlash = 0, ammoEmpty = false }) {
+  draw(camera, { fm, markers, armed, tg = null, hitFlash = 0, ammoEmpty = false }) {
     const g = this.g;
     this.clear();
     if (hitFlash > 0) {
@@ -122,11 +124,14 @@ export class TacticalHUD {
     }
     g.font = '600 12px "Share Tech Mono", monospace';
     g.textAlign = 'center';
-    // ordenar por cercanía: solo la más próxima lleva flecha
+    // ordenar por cercanía: solo la más próxima lleva flecha (o el blanco designado)
+    const sel = tg?.target || null;
     let nearest = null, nd = Infinity;
     const list = markers.map(m => { const d = m.pos.distanceTo(fm.pos); if (d < nd) { nd = d; nearest = m; } return { m, d }; });
+    if (sel) nearest = list.find(o => o.m.e === sel)?.m || nearest;
     for (const { m, d } of list) {
       this.toScreen(m.pos, camera, s);
+      if (m.e && m.e === sel) { this.designate(s, m, d, tg, camera, fm); continue; }
       const col = m.air ? RD : AM;
       if (s.on) {
         const r = Math.max(9, Math.min(24, 1500 / d * 8));
@@ -153,6 +158,40 @@ export class TacticalHUD {
           }
         }
       } else if (m === nearest) this.arrow(s, col);
+    }
+  }
+
+  // blanco designado: recuadro verde, rombo que se cierra mientras se fija,
+  // identificación, distancia y estado; con el cañón automático, su punto de mira
+  designate(s, m, d, tg, camera, fm) {
+    const g = this.g;
+    if (!s.on) { this.arrow(s, GR); return; }
+    const r = Math.max(14, Math.min(30, 1500 / d * 10));
+    g.beginPath(); g.rect(s.x - r, s.y - r, r * 2, r * 2); this.stroke(GR, 1.8);
+    const k = tg.locked ? 1 : tg.lockT;
+    const dr = r * (2.4 - 1.1 * k);
+    g.save(); g.translate(s.x, s.y); g.rotate(tg.locked ? 0 : performance.now() / 400);
+    g.beginPath(); g.moveTo(0, -dr); g.lineTo(dr, 0); g.lineTo(0, dr); g.lineTo(-dr, 0); g.closePath();
+    this.stroke(tg.locked ? RD : GR, tg.locked ? 2.2 : 1.2);
+    g.restore();
+    const lines = [tg.idText(), fmtD(d), tg.locked ? (tg.gunAuto ? 'FIJADO · CAÑÓN AUTO' : 'FIJADO') : 'FIJANDO…'];
+    g.font = '600 12px "Share Tech Mono", monospace'; g.textAlign = 'left';
+    lines.forEach((t, i) => {
+      const y = s.y - r + 4 + i * 14;
+      g.lineWidth = 3; g.strokeStyle = 'rgba(5,10,18,0.75)'; g.strokeText(t, s.x + r + 8, y);
+      g.fillStyle = i === 2 && tg.locked ? RD : GR; g.fillText(t, s.x + r + 8, y);
+    });
+    g.textAlign = 'center';
+    // adelanto de tiro para blancos móviles
+    if (m.vel && d < 2500 && m.vel.lengthSq() > 4) {
+      const t = d / BULLET_SPEED;
+      _q.copy(m.pos).addScaledVector(m.vel, t).addScaledVector(fm.vel, -t);
+      const lead = { x: 0, y: 0, on: false, behind: false };
+      this.toScreen(_q, camera, lead);
+      if (lead.on) {
+        g.beginPath(); g.arc(lead.x, lead.y, 6, 0, 6.2832); this.stroke(GR, 1.4);
+        g.beginPath(); g.moveTo(s.x, s.y); g.lineTo(lead.x, lead.y); g.globalAlpha = 0.45; g.lineWidth = 1; g.strokeStyle = GR; g.stroke(); g.globalAlpha = 1;
+      }
     }
   }
 }

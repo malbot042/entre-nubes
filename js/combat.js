@@ -1,7 +1,8 @@
-// Combate: proyectiles vectoriales, cohetes no guiados, unidades enemigas e IA.
+// Combate: proyectiles vectoriales, cohetes (guiados si hay un blanco fijado),
+// unidades enemigas e IA, y blancos de entrenamiento que no disparan.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { clamp, lerp } from './util.js?v=23';
+import { clamp, lerp } from './util.js?v=27';
 
 const G = 9.81;
 const BULLET_V = 1050, MAX_BULLETS = 500;
@@ -77,12 +78,13 @@ function matFor() {
   return new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.6, metalness: 0.2 });
 }
 
-const KINDS = {
+export const KINDS = {
   tank: { hp: 120, r: 5.5, score: 150, label: 'TANQUE' },
   aaa: { hp: 70, r: 5, score: 200, label: 'ANTIAÉREO' },
   bunker: { hp: 240, r: 11, score: 250, label: 'BÚNKER' },
   truck: { hp: 40, r: 5, score: 75, label: 'CAMIÓN' },
   fighter: { hp: 80, r: 10, score: 300, label: 'CAZA' },
+  drone: { hp: 45, r: 8, score: 120, label: 'DRON' },
 };
 
 export class Combat {
@@ -94,7 +96,7 @@ export class Combat {
     this.enemies = [];
     this.bullets = [];
     this.rockets = [];
-    this.score = 0; this.frame = 0; this.gunT = 0; this.rocketT = 0; this.rocketSide = 1; this.gunIdx = 0;
+    this.score = 0; this.kills = 0; this.frame = 0; this.gunT = 0; this.rocketT = 0; this.rocketSide = 1; this.gunIdx = 0;
     this.player = null;
     this.tracers = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ fog: false, toneMapped: false }), MAX_BULLETS);
     this.tracers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -114,7 +116,13 @@ export class Combat {
     for (const e of this.enemies) this.remove(e);
     for (const r of this.rockets) this.scene.remove(r.mesh);
     this.enemies.length = 0; this.bullets.length = 0; this.rockets.length = 0;
-    this.tracers.count = 0; this.score = 0;
+    this.tracers.count = 0; this.score = 0; this.kills = 0;
+  }
+  // retira una unidad sin destruirla (blancos de entrenamiento que quedan lejos)
+  discard(e) {
+    this.remove(e);
+    const i = this.enemies.indexOf(e);
+    if (i >= 0) this.enemies.splice(i, 1);
   }
   remove(e) { this.scene.remove(e.obj); }
 
@@ -135,7 +143,7 @@ export class Combat {
     obj.position.set(x, y, z); obj.rotation.y = heading;
     this.scene.add(obj);
     const K = KINDS[kind];
-    const e = { kind, obj, turret, pos: obj.position, hp: K.hp, r: K.r, air: false, dead: false, cool: 1 + Math.random() * 3, burst: 0, heading, speed: kind === 'tank' ? 4 : kind === 'truck' ? 7 : 0, level, t: Math.random() * 10, deadT: 0 };
+    const e = { kind, obj, turret, pos: obj.position, vel: new THREE.Vector3(), hp: K.hp, r: K.r, air: false, dead: false, cool: 1 + Math.random() * 3, burst: 0, heading, speed: kind === 'tank' ? 4 : kind === 'truck' ? 7 : 0, level, t: Math.random() * 10, deadT: 0 };
     this.enemies.push(e);
     return e;
   }
@@ -155,13 +163,33 @@ export class Combat {
     return e;
   }
 
+  // dron de entrenamiento: vuela en círculos sobre un punto y no dispara
+  spawnDrone(cx, cz, world) {
+    const obj = new THREE.Mesh(this.geo.fighter, this.mat);
+    obj.castShadow = true; obj.scale.setScalar(0.7);
+    this.scene.add(obj);
+    const K = KINDS.drone;
+    const e = {
+      kind: 'drone', obj, pos: obj.position, hp: K.hp, r: K.r, air: true, dead: false, training: true,
+      dir: new THREE.Vector3(1, 0, 0), vel: new THREE.Vector3(), roll: 0, t: 0, deadT: 0,
+      cx, cz, radius: 500 + Math.random() * 500, ang: Math.random() * 6.28, sense: Math.random() < 0.5 ? 1 : -1,
+      speed: 45 + Math.random() * 25, agl: 220 + Math.random() * 280,
+    };
+    e.pos.set(cx + Math.cos(e.ang) * e.radius, Math.max(world.height(cx, cz), 0) + e.agl, cz + Math.sin(e.ang) * e.radius);
+    this.enemies.push(e);
+    return e;
+  }
+
   get alive() { return this.enemies.filter(e => !e.dead); }
 
   // ---- armas del jugador ----
-  fire(input, dt) {
+  // tg: sistema de fijación. Con un blanco fijado, el cañón apunta solo al punto
+  // de impacto previsto si está dentro de su cono, y los cohetes salen guiados.
+  fire(input, dt, tg = null) {
     const p = this.player;
     if (!p || p.fm.crashed || !p.spec.arms) return;
     const a = p.spec.arms, fm = p.fm;
+    const auto = tg && tg.gunAuto ? tg.target : null;
     this.gunT -= dt; this.rocketT -= dt;
     if (input.gun && p.ammo > 0) {
       while (this.gunT <= 0 && p.ammo > 0) {
@@ -170,7 +198,12 @@ export class Combat {
         const at = a.gun.at[this.gunIdx++ % a.gun.at.length];
         _a.set(at[0], at[1], at[2]).applyQuaternion(fm.quat).add(fm.pos);
         const spread = 0.0026;
-        _b.set((Math.random() - 0.5) * spread, (Math.random() - 0.5) * spread, -1).normalize().applyQuaternion(fm.quat);
+        if (auto) {
+          this.leadPoint(_a, auto, fm.vel, BULLET_V, _c);
+          _b.copy(_c).sub(_a).normalize();
+          _b.x += (Math.random() - 0.5) * spread; _b.y += (Math.random() - 0.5) * spread; _b.z += (Math.random() - 0.5) * spread;
+          _b.normalize();
+        } else _b.set((Math.random() - 0.5) * spread, (Math.random() - 0.5) * spread, -1).normalize().applyQuaternion(fm.quat);
         this.addBullet(_a, _b.multiplyScalar(BULLET_V).add(fm.vel), a.gun.dmg, true);
         this.fx.glow(_a.x, _a.y, _a.z, fm.vel.x, fm.vel.y, fm.vel.z, 10, 6.5, 2.5, 3.4, 0.05, 0);
       }
@@ -185,7 +218,7 @@ export class Combat {
       _b.set((Math.random() - 0.5) * 0.008, (Math.random() - 0.5) * 0.008, -1).normalize().applyQuaternion(fm.quat);
       const mesh = new THREE.Mesh(this.rocketGeo, this.rocketMat);
       mesh.position.copy(_a); this.scene.add(mesh);
-      this.rockets.push({ mesh, pos: mesh.position, vel: fm.vel.clone().addScaledVector(_b, 90), dir: _b.clone(), age: 0, burn: 1.7 });
+      this.rockets.push({ mesh, pos: mesh.position, vel: fm.vel.clone().addScaledVector(_b, 90), dir: _b.clone(), age: 0, burn: 1.7, target: tg && tg.locked ? tg.target : null });
       this.audio.rocket();
     }
   }
@@ -204,7 +237,7 @@ export class Combat {
   kill(e) {
     e.dead = true; e.deadT = 0;
     const K = KINDS[e.kind];
-    this.score += K.score;
+    this.score += K.score; this.kills++;
     this.fx.explosion(e.pos, e.air ? 2 : e.kind === 'bunker' ? 2.4 : 1.5);
     this.audio.explosion();
     if (e.air) { this.remove(e); }
@@ -231,15 +264,31 @@ export class Combat {
       const e = this.enemies[i];
       if (e.dead) {
         e.deadT += dt;
-        if (e.air) { this.enemies.splice(i--, 1); continue; }
+        if (e.air || e.deadT > 45) { this.remove(e); this.enemies.splice(i--, 1); continue; }
         if (e.deadT < 25 && Math.random() < dt * 5) this.fx.puff(e.pos.x + (Math.random() - 0.5) * 3, e.pos.y + 3, e.pos.z + (Math.random() - 0.5) * 3, 1.5, 7, 1, 2 + Math.random() * 2, 3.5, 0.1);
         continue;
       }
       if (!p || p.fm.crashed) continue;
-      if (e.air) this.updateFighter(e, dt, world); else this.updateGround(e, dt, world);
+      if (e.kind === 'drone') this.updateDrone(e, dt, world);
+      else if (e.air) this.updateFighter(e, dt, world); else this.updateGround(e, dt, world);
     }
     this.updateRockets(dt, world);
     this.updateBullets(dt, world);
+  }
+
+  // punto al que apuntar para acertar a e con un proyectil de velocidad speed que
+  // hereda shooterVel: adelanto por el movimiento relativo y compensación de la caída
+  leadPoint(from, e, shooterVel, speed, out, drop = true) {
+    out.copy(e.pos); if (!e.air) out.y += 1.5;
+    let t = out.distanceTo(from) / speed;
+    for (let k = 0; k < 2; k++) {
+      _d.copy(e.pos); if (!e.air) _d.y += 1.5;
+      if (e.vel) _d.addScaledVector(e.vel, t);
+      _d.addScaledVector(shooterVel, -t);
+      t = _d.distanceTo(from) / speed;
+    }
+    out.copy(_d); if (drop) out.y += 0.5 * G * t * t;
+    return out;
   }
 
   aimAt(from, targetPos, targetVel, speed, out) {
@@ -259,10 +308,11 @@ export class Combat {
       if (e.turnTo !== undefined) e.heading = lerp(e.heading, e.turnTo, dt * 0.4);
       const nx = e.pos.x - Math.sin(e.heading) * e.speed * dt, nz = e.pos.z - Math.cos(e.heading) * e.speed * dt;
       const h = world.groundHeight(nx, nz);
-      if (h > 1.5) { e.pos.x = nx; e.pos.z = nz; e.pos.y = h; } else { e.turnTo = e.heading + 2; }
+      if (h > 1.5) { e.pos.x = nx; e.pos.z = nz; e.pos.y = h; e.vel.set(-Math.sin(e.heading) * e.speed, 0, -Math.cos(e.heading) * e.speed); }
+      else { e.turnTo = e.heading + 2; e.vel.set(0, 0, 0); }
       e.obj.rotation.y = e.heading;
     }
-    if (!e.turret) return;
+    if (!e.turret || e.training) return;
     const range = e.kind === 'aaa' ? 3400 : 1900;
     if (dist > range) return;
     const speed = e.kind === 'aaa' ? 720 : 430;
@@ -280,6 +330,22 @@ export class Combat {
     _b.normalize().multiplyScalar(speed);
     this.addBullet(_a, _b, e.kind === 'aaa' ? 6 : 16, false);
     this.fx.glow(_a.x, _a.y, _a.z, 0, 0, 0, 8, 3, 1.5, 2.6, 0.06, 0);
+  }
+
+  updateDrone(e, dt, world) {
+    e.t += dt;
+    e.ang += e.sense * e.speed / e.radius * dt;
+    const x = e.cx + Math.cos(e.ang) * e.radius, z = e.cz + Math.sin(e.ang) * e.radius;
+    const gy = Math.max(world.height(x, z), world.height(e.cx, e.cz), 0) + e.agl + Math.sin(e.t * 0.3) * 40;
+    const y = lerp(e.pos.y, gy, 1 - Math.exp(-dt * 0.5));
+    e.vel.set(x - e.pos.x, y - e.pos.y, z - e.pos.z).divideScalar(Math.max(dt, 1e-4));
+    if (e.vel.lengthSq() > 1) e.dir.copy(e.vel).normalize();
+    e.pos.set(x, y, z);
+    e.roll = -e.sense * 0.45;
+    _m.lookAt(ZERO, e.dir, UP);
+    _q.setFromRotationMatrix(_m);
+    _q2.setFromAxisAngle(Z, e.roll);
+    e.obj.quaternion.copy(_q).multiply(_q2);
   }
 
   updateFighter(e, dt, world) {
@@ -341,8 +407,19 @@ export class Combat {
       const r = this.rockets[i];
       r.age += dt;
       const burning = r.age < r.burn;
+      const tgt = r.target && !r.target.dead ? r.target : null;
       // con el motor encendido las aletas mantienen la trayectoria; apagado, cae en balística
-      if (burning) r.vel.addScaledVector(r.dir, 520 * dt); else r.vel.y -= G * dt;
+      if (burning) r.vel.addScaledVector(r.dir, 520 * dt); else if (!tgt) r.vel.y -= G * dt;
+      if (tgt) {
+        // guiado: gira hacia el punto de encuentro con un límite de 3 rad/s
+        const v = r.vel.length();
+        this.leadPoint(r.pos, tgt, ZERO, Math.max(v, 200), _c, false);
+        _d.copy(_c).sub(r.pos).normalize();
+        _c.copy(r.vel).divideScalar(v || 1);
+        const ang = Math.acos(clamp(_c.dot(_d), -1, 1));
+        if (ang > 1e-4) _c.lerp(_d, Math.min(1, 3 * dt / ang)).normalize();
+        r.vel.copy(_c).multiplyScalar(v);
+      }
       const sp = r.vel.length();
       r.vel.multiplyScalar(Math.exp(-0.05 * dt));
       _a.copy(r.pos); // punto anterior
@@ -361,10 +438,15 @@ export class Combat {
       if (!boom) {
         const h = Math.max(world.height(r.pos.x, r.pos.z), 0);
         if (r.pos.y <= h + 0.5) boom = true;
-        for (const e of this.enemies) {
+        // espoleta de proximidad: estalla al pasar a menos de 18 m del blanco guiado
+        let hit = tgt && segHit(_a, r.pos, tgt.pos, 18, tgt.air ? 0 : 1.5) ? tgt : null;
+        if (!hit) for (const e of this.enemies) {
           if (e.dead) continue;
-          if (segHit(_a, r.pos, e.pos, e.r * (e.air ? 1.2 : 1), e.air ? 0 : 1.5)) { boom = true; break; }
+          if (segHit(_a, r.pos, e.pos, e.r * (e.air ? 1.2 : 1), e.air ? 0 : 1.5)) { hit = e; break; }
         }
+        // la explosión va en el punto del recorrido más cercano al blanco, no al final
+        // del paso (a pocos FPS el cohete avanza decenas de metros por fotograma)
+        if (hit) { boom = true; closestOnSeg(_a, r.pos, hit.pos, r.pos); }
       }
       if (boom) {
         this.fx.explosion(r.pos, 0.85);
@@ -433,6 +515,12 @@ export class Combat {
     d.instanceMatrix.needsUpdate = true;
     if (d.instanceColor) d.instanceColor.needsUpdate = true;
   }
+}
+
+function closestOnSeg(a, b, c, out) {
+  const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, aa = dx * dx + dy * dy + dz * dz;
+  const t = aa < 1e-9 ? 0 : clamp(((c.x - a.x) * dx + (c.y - a.y) * dy + (c.z - a.z) * dz) / aa, 0, 1);
+  return out.set(a.x + dx * t, a.y + dy * t, a.z + dz * t);
 }
 
 // Intersección segmento-esfera (yOff eleva el centro: las unidades de tierra se apoyan en su base)

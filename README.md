@@ -37,7 +37,8 @@ Activado por defecto (menú o Ajustes). En los aviones, A/D fijan el ángulo de 
 | `js/world.js` · `js/environment.js` | Terreno procedural, cielo, clima y luz |
 | `js/postfx.js` · `js/effects.js` | Post-procesado y partículas |
 | `js/navmap.js` | Mapa móvil de las pantallas de cabina (relieve sombreado, aeropuertos, ruta) |
-| `js/combat.js` · `js/missions.js` · `js/hud.js` | Armas e IA, modos de juego y marcadores de objetivos |
+| `js/combat.js` · `js/missions.js` · `js/hud.js` | Armas e IA, modos de juego (con blancos de entrenamiento en vuelo libre) y marcadores de objetivos |
+| `js/targeting.js` | Sistema de localización, identificación y fijación de blancos (cañón automático y cohetes guiados) |
 
 Prueba local: `python3 -m http.server` y abre http://localhost:8000
 Controles: tecla **H** dentro del juego.

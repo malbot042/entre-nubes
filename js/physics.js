@@ -1,6 +1,6 @@
 // Modelo de vuelo simplificado pero creíble para aviones y helicópteros.
 import * as THREE from 'three';
-import { clamp, lerp, smoothstep, DEG } from './util.js?v=23';
+import { clamp, lerp, smoothstep, DEG } from './util.js?v=27';
 
 const G = 9.81;
 const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _q = new THREE.Quaternion(), _qi = new THREE.Quaternion();
@@ -275,12 +275,13 @@ export class FlightModel {
     const vyT = c >= 0 ? c * 2 * 11 : c * 2 * 6;
     let vy = this.vel.y - env.wind.y;
     vy += (vyT - vy) * Math.min(1, dt * 2.5);
-    // actitud visual: morro abajo al acelerar y en crucero, arriba al frenar;
-    // alabeo hacia dentro del giro en avance y hacia el lado del desplazamiento
-    const pitchT = clamp(-(acc / A) * 9 * DEG - (vf / vmax) * 4 * DEG, -12 * DEG, 12 * DEG);
-    const rollT = clamp(this.yawRate * Math.max(vf, 0) / G, -35 * DEG, 35 * DEG) - (vrT / 14) * 12 * DEG;
-    this.visPitch = lerp(this.visPitch || 0, this.onGround && !airborne ? 0 : pitchT, Math.min(1, dt * 4));
-    this.visRoll = lerp(this.visRoll || 0, this.onGround && !airborne ? 0 : rollT, Math.min(1, dt * 4));
+    // actitud visual suave y sin sorpresas (prima la comodidad sobre el realismo):
+    // el morro solo depende de la tecla pulsada (W baja 6°, S sube 5°) y el alabeo
+    // acompaña al giro y al desplazamiento lateral con un máximo de 15°
+    const pitchT = push > 0 ? -6 * DEG * push : -5 * DEG * push;
+    const rollT = clamp(-input.roll * smoothstep(3, 25, vf) * 15 * DEG - input.yaw * 8 * DEG, -15 * DEG, 15 * DEG);
+    this.visPitch = lerp(this.visPitch || 0, this.onGround && !airborne ? 0 : pitchT, Math.min(1, dt * 2.5));
+    this.visRoll = lerp(this.visRoll || 0, this.onGround && !airborne ? 0 : rollT, Math.min(1, dt * 3));
     _e.set(this.visPitch, newYaw, this.visRoll, 'YXZ');
     this.quat.setFromEuler(_e);
     this.vel.set(nfx * vf + nrx * vr + env.wind.x, vy + env.wind.y, nfz * vf + nrz * vr + env.wind.z);

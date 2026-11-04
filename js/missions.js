@@ -1,9 +1,9 @@
 // Modos de juego: ataque a tierra (CAS) e interceptación aérea.
 import * as THREE from 'three';
-import { mulberry32 } from './util.js?v=23';
+import { mulberry32 } from './util.js?v=27';
 
 export const MODES = [
-  { id: 'free', name: 'Vuelo libre', icon: '☁', desc: 'Exploración sin límites sobre un mundo infinito, con ciclo de día y noche en tiempo real. Elige un destino y aterriza.' },
+  { id: 'free', name: 'Vuelo libre', icon: '☁', desc: 'Exploración sin límites sobre un mundo infinito, con ciclo de día y noche en tiempo real. Elige un destino y aterriza, o practica con los blancos de entrenamiento: vehículos y drones que no disparan.' },
   { id: 'cas', name: 'Ataque a tierra', icon: '⌖', desc: 'Apoyo aéreo cercano: destruye tanques, antiaéreos y búnkeres con cañón y cohetes no guiados. Vuela bajo y vigila la flak.' },
   { id: 'dogfight', name: 'Interceptación', icon: '✈', desc: 'Dogfight contra oleadas de cazas enemigos con maniobras evasivas. Cada oleada es mayor y más precisa.' },
 ];
@@ -165,6 +165,70 @@ class Dogfight extends Base {
     }
   }
   onCrash(reason) { this.failed(reason); }
+}
+
+// ==================== ENTRENAMIENTO (vuelo libre) ====================
+// En vuelo libre siempre hay blancos alrededor: grupos de vehículos en tierra y
+// drones en círculo. No disparan. Los que quedan muy atrás se retiran y van
+// apareciendo nuevos por delante; las armas se recargan solas al agotarse.
+const T_GROUND = 6, T_DRONES = 3;
+export class Training {
+  constructor(ctx) { this.ctx = ctx; this.check = 0; this.cool = 0; this.reload = 0; this.rnd = mulberry32(ctx.seed + 77); }
+  get combat() { return this.ctx.combat; }
+  start() {
+    this.combat.armPlayer(this.ctx.fm, this.ctx.spec, this.ctx.model);
+    this.fill(true);
+  }
+  // punto por delante del jugador, a 2,5–5 km y hasta 55° a cada lado del rumbo
+  ahead(min = 2500, max = 5000) {
+    const fm = this.ctx.fm, rnd = this.rnd;
+    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(fm.quat);
+    const hdg = Math.atan2(f.x, -f.z) + (rnd() - 0.5) * 1.9, d = min + rnd() * (max - min);
+    return { x: fm.pos.x + Math.sin(hdg) * d, z: fm.pos.z - Math.cos(hdg) * d };
+  }
+  fill(all = false) {
+    const c = this.combat, w = this.ctx.world, rnd = this.rnd;
+    const ground = c.enemies.filter(e => e.training && !e.air && !e.dead).length;
+    const drones = c.enemies.filter(e => e.kind === 'drone' && !e.dead).length;
+    if (ground < T_GROUND && (all || ground <= 2)) {
+      const p = this.ahead(), site = findFlat(w, p.x, p.z, rnd, 1500);
+      const kinds = ['tank', 'truck', 'tank', 'aaa', 'truck', 'bunker'];
+      for (let i = 0; i < T_GROUND - ground; i++) {
+        for (let k = 0; k < 10; k++) {
+          const a = rnd() * 6.28, d = 60 + rnd() * 320;
+          const x = site.x + Math.cos(a) * d, z = site.z + Math.sin(a) * d, h = w.groundHeight(x, z);
+          if (h < 2 || w.nearAirport(x, z, 150)) continue;
+          c.spawnGround(kinds[i % kinds.length], x, h - 0.1, z, rnd() * 6.28, 1).training = true;
+          break;
+        }
+      }
+    }
+    for (let i = drones; i < T_DRONES; i++) {
+      const p = this.ahead(3000, 6000);
+      c.spawnDrone(p.x, p.z, w);
+    }
+  }
+  update(dt) {
+    const c = this.combat, fm = this.ctx.fm, p = c.player;
+    if (!p) return;
+    this.check -= dt; this.cool -= dt;
+    if (this.check <= 0) {
+      this.check = 1;
+      for (const e of [...c.enemies]) {
+        const far = e.air ? Math.hypot(e.cx - fm.pos.x, e.cz - fm.pos.z) : e.pos.distanceTo(fm.pos);
+        if (e.training && !e.dead && far > 14000) c.discard(e);
+      }
+      if (this.cool <= 0) { this.fill(); this.cool = 8; }
+    }
+    // recarga automática al quedarse sin munición o sin cohetes
+    const a = this.ctx.spec.arms;
+    if (a && (p.ammo <= 0 || p.rockets <= 0)) {
+      if (this.reload <= 0) { this.reload = 4; this.ctx.toast('Recargando armamento…', '', 3500); }
+      this.reload -= dt;
+      if (this.reload <= 0) { p.ammo = a.gun.ammo; p.rockets = a.rockets; this.reload = 0; this.ctx.toast('Armamento recargado', 'good'); }
+    }
+  }
+  panel() { return `<b>ENTRENAMIENTO</b> Blancos destruidos ${this.combat.kills}`; }
 }
 
 export function createMission(mode, ctx) {

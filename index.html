@@ -7,7 +7,7 @@
   <meta name="description" content="Simulador y arcade de vuelo 3D en el navegador: F-14, F-16, F/A-18, A-10, Apache y LHX con estética low-poly retro, render moderno, combate aéreo y ataque a tierra.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=23">
+  <link rel="stylesheet" href="css/style.css?v=27">
   <script type="importmap">
   {
     "imports": {
@@ -152,8 +152,10 @@
         <tr><td>W / S</td><td>Avanzar / retroceder (al soltar, frena hasta quedarse quieto)</td></tr>
         <tr><td>A / D</td><td>Girar el morro a izquierda / derecha</td></tr>
         <tr><td>Q / E</td><td>Desplazarse de lado a izquierda / derecha</td></tr>
-        <tr><th colspan="2">Armas (modos de combate)</th></tr>
-        <tr><td>Espacio · Z</td><td>Cañón · cohetes no guiados</td></tr>
+        <tr><th colspan="2">Armas (siempre disponibles; en vuelo libre hay blancos de entrenamiento)</th></tr>
+        <tr><td>Espacio · Z</td><td>Cañón · cohetes</td></tr>
+        <tr><td>Tab</td><td>Siguiente blanco. El sistema elige solo el más centrado, lo identifica y lo fija si mantienes el morro hacia él</td></tr>
+        <tr><td>Blanco fijado</td><td>El cañón apunta solo si el blanco está cerca del morro y los cohetes salen guiados</td></tr>
         <tr><th colspan="2">Cámara</th></tr>
         <tr><td>C</td><td>Cabina / exterior / pasada</td></tr>
         <tr><td>Arrastrar ratón · rueda</td><td>Mirar alrededor · en cabina, acercarse al HUD y a las pantallas; fuera, distancia de la cámara</td></tr>
@@ -164,7 +166,7 @@
         <tr><td>T · O · H</td><td>Clima · ajustes · ayuda</td></tr>
         <tr><td>Esc · Enter</td><td>Pausa · reiniciar tras accidente</td></tr>
       </table>
-      <p>Con mando: sticks para mandos de vuelo, gatillos para potencia, RB cañón, LB cohetes, A tren, B frenos, Y cámara.</p>
+      <p>Con mando: sticks para mandos de vuelo, gatillos para potencia, RB cañón, LB cohetes, cruceta derecha siguiente blanco, A tren, B frenos, Y cámara.</p>
     </div>
   </div>
 
@@ -192,6 +194,6 @@
   <div id="version" data-version></div>
   <div id="loading" class="overlay hidden"><div class="spinner"></div><div id="loading-text">Generando terreno…</div></div>
   <noscript>Este simulador necesita JavaScript y WebGL.</noscript>
-  <script type="module" src="js/main.js?v=23"></script>
+  <script type="module" src="js/main.js?v=27"></script>
 </body>
 </html>

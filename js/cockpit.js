@@ -1,8 +1,8 @@
 // Interiores de cabina detallados: estructura, mandos animados, piloto
 // (piernas y guantes), paneles con instrumentos dibujados en canvas y HUD.
 import * as THREE from 'three';
-import * as I from './instruments.js?v=23';
-import { mat, glassMat } from './models.js?v=23';
+import * as I from './instruments.js?v=27';
+import { mat, glassMat } from './models.js?v=27';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const DEG = Math.PI / 180;
@@ -395,7 +395,7 @@ const PANELS = {
     plates: [[20, 150, 330, 340], [674, 150, 330, 340], [360, 0, 304, 512], [20, 4, 330, 140], [674, 4, 330, 140]],
     items: [
       { k: 'mfd', x: 45, y: 172, w: 280, h: 280, osb: ['MAP', 'HSD', 'SMS', 'TGP', 'DTE'], draw: mapD },
-      { k: 'mfd', x: 699, y: 172, w: 280, h: 280, osb: ['HSI', 'FCR', 'WPN', 'FLIR', 'TEST'], draw: (g, x, y, w, h, s) => I.nd(g, x, y, w, h, s) },
+      { k: 'mfd', x: 699, y: 172, w: 280, h: 280, osb: ['TGT', 'FCR', 'WPN', 'FLIR', 'TEST'], draw: (g, x, y, w, h, s) => I.targetPage(g, x, y, w, h, s) },
       { k: 'box', x: 400, y: 18, w: 224, h: 165, draw: I.ufc },
       { k: 'gauge', x: 450, y: 292, r: 52, draw: I.attitude, title: 'ADI' },
       { k: 'gauge', x: 582, y: 262, r: 36, draw: I.asi, title: 'IAS' },
@@ -419,7 +419,8 @@ const PANELS = {
       { k: 'gauge', x: 92, y: 280, r: 58, draw: I.altimeter, title: 'ALT' },
       { k: 'gauge', x: 252, y: 336, r: 56, draw: I.vsi, title: 'VVI' },
       { k: 'gauge', x: 92, y: 436, r: 50, draw: I.heading, title: 'BDHI' },
-      { k: 'mfd', x: 384, y: 150, w: 256, h: 256, osb: ['TID', 'NAV', 'TGT', '', ''], draw: mapD, title: 'TACTICAL INFORMATION DISPLAY' },
+      // el TID muestra el mapa y pasa a la página de blancos mientras el designado está a menos de 30° del morro
+      { k: 'mfd', x: 384, y: 150, w: 256, h: 256, osb: ['TID', 'NAV', 'TGT', '', ''], draw: (g, x, y, w, h, s, c) => s.tgt && s.tgt.off < 30 ? I.targetPage(g, x, y, w, h, s) : mapD(g, x, y, w, h, s, c), title: 'TACTICAL INFORMATION DISPLAY' },
       { k: 'box', x: 392, y: 22, w: 240, h: 96, draw: I.warnPanel },
       { k: 'gauge', x: 770, y: 100, r: 54, draw: tachG, title: 'RPM L' },
       { k: 'gauge', x: 912, y: 100, r: 54, draw: tachG, title: 'RPM R' },
@@ -434,7 +435,7 @@ const PANELS = {
     bg: ['#353a33', '#272b26'], seed: 9,
     plates: [[16, 96, 348, 348], [660, 96, 348, 348], [372, 4, 280, 504], [16, 4, 348, 86], [660, 4, 348, 86]],
     items: [
-      { k: 'mfd', x: 46, y: 124, w: 290, h: 290, osb: ['FLT', 'TSD', 'WPN', 'FUEL', 'ENG'], draw: (g, x, y, w, h, s) => I.pfd(g, x, y, w, h, s) },
+      { k: 'mfd', x: 46, y: 124, w: 290, h: 290, osb: ['TADS', 'FLT', 'WPN', 'FUEL', 'ENG'], draw: (g, x, y, w, h, s) => I.targetPage(g, x, y, w, h, s) },
       { k: 'mfd', x: 688, y: 124, w: 290, h: 290, osb: ['TSD', 'MAP', 'COM', 'ASE', 'UTIL'], draw: mapD },
       { k: 'gauge', x: 452, y: 150, r: 54, draw: (g, x, y, r, s) => I.smallGauge(g, x, y, r, s.throttle, 'TRQ %'), title: 'TORQUE' },
       { k: 'gauge', x: 574, y: 150, r: 54, draw: (g, x, y, r, s) => I.smallGauge(g, x, y, r, s.rpm, 'NR %'), title: 'ROTOR' },

@@ -1,20 +1,21 @@
 // Entre Nubes — bucle principal, cámaras, entrada, HUD y menús.
 import * as THREE from 'three';
-import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=23';
-import { buildModel } from './models.js?v=23';
-import { Cockpit } from './cockpit.js?v=23';
-import { FlightModel } from './physics.js?v=23';
-import { World, CHUNK } from './world.js?v=23';
-import { Environment, WEATHER } from './environment.js?v=23';
-import { AudioEngine } from './audio.js?v=23';
-import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=23';
-import { PostFX, CRT_CURVE } from './postfx.js?v=23';
-import { Particles } from './effects.js?v=23';
-import { Combat } from './combat.js?v=23';
-import { MODES, createMission, isCombat } from './missions.js?v=23';
-import { TacticalHUD } from './hud.js?v=23';
-import { NavMap } from './navmap.js?v=23';
-import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=23';
+import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=27';
+import { buildModel } from './models.js?v=27';
+import { Cockpit } from './cockpit.js?v=27';
+import { FlightModel } from './physics.js?v=27';
+import { World, CHUNK } from './world.js?v=27';
+import { Environment, WEATHER } from './environment.js?v=27';
+import { AudioEngine } from './audio.js?v=27';
+import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=27';
+import { PostFX, CRT_CURVE } from './postfx.js?v=27';
+import { Particles } from './effects.js?v=27';
+import { Combat } from './combat.js?v=27';
+import { MODES, createMission, isCombat, Training } from './missions.js?v=27';
+import { Targeting } from './targeting.js?v=27';
+import { TacticalHUD } from './hud.js?v=27';
+import { NavMap } from './navmap.js?v=27';
+import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=27';
 
 // ---------------- Ajustes persistentes ----------------
 const DEFAULTS = { aircraft: 'f16', time: '13', weather: 'clear', dist: 'medium', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, assist: true, edges: true, crt: true, best: {} };
@@ -54,6 +55,7 @@ for (const l of [env.sun, env.hemi, env.ambient]) l.layers.enable(1);
 env.sun.shadow.camera.layers.enableAll();
 const particles = new Particles(scene);
 const combat = new Combat(scene, particles, audio);
+const targeting = new Targeting(combat);
 const tacHud = new TacticalHUD(document.getElementById('hud-canvas'));
 tacHud.curve = settings.crt ? CRT_CURVE : null;
 
@@ -104,7 +106,7 @@ const eyePivot = new THREE.Group();
 const VERSION = 'v' + (new URL(import.meta.url).searchParams.get('v') || 'dev');
 for (const el of document.querySelectorAll('[data-version]')) el.textContent = `Entre Nubes ${VERSION}`;
 console.info(`Entre Nubes ${VERSION}`);
-window.__entreNubes = { state, scene, camera, env, combat, particles, fx, version: VERSION };
+window.__entreNubes = { state, scene, camera, env, combat, targeting, particles, fx, version: VERSION };
 const keys = new Set();
 const defPitch = () => (state.spec?.type === 'heli' ? -8 : -6) * DEG;
 
@@ -136,7 +138,7 @@ document.querySelectorAll('.window .win-head').forEach(h => {
 // ---------------- Menú ----------------
 let currentCat = AIRCRAFT_BY_ID[settings.aircraft]?.cat || 'plane';
 const unarmedFor = (a, mode) => isCombat(mode) && !a.arms;
-const MODE_SUB = { free: 'Explora y aterriza', cas: 'Tanques y antiaéreos', dogfight: 'Oleadas de cazas' };
+const MODE_SUB = { free: 'Explora y entrena', cas: 'Tanques y antiaéreos', dogfight: 'Oleadas de cazas' };
 function buildModes() {
   const box = $('mode-tabs'); box.innerHTML = '';
   for (const m of MODES) {
@@ -284,6 +286,7 @@ async function startFlight(keepWorld = false) {
   if (mission) state.cam = 'chase';
   spawnAircraft(settings.aircraft, mission?.startInAir ? 'air' : 'runway');
   mission?.start();
+  startTraining();
   setLoading(true, 'Cargando escenario…');
   await new Promise(r => setTimeout(r, 20));
   state.world.update(state.fm.pos, 0, 0, true);
@@ -297,8 +300,8 @@ async function startFlight(keepWorld = false) {
   state.mode = 'flying';
   $('hud').classList.remove('hidden');
   toast(`${state.origin.icao} ${state.origin.name}  →  ${state.dest.icao} ${state.dest.name}`, '', 5000);
-  if (mission?.startInAir) toast('Espacio: cañón · Z: cohetes · Shift / Ctrl: potencia', '', 6000);
-  else toast(state.spec.type === 'heli' ? 'Colectivo con Shift/Ctrl o R/F: al 50 % se mantiene en el aire' : 'Gases con Shift o R, suelta frenos con P', '', 5000);
+  toast('Espacio: cañón · Z: cohetes · Tab: cambiar de blanco', '', 6000);
+  if (!mission?.startInAir) toast(state.spec.type === 'heli' ? 'Colectivo con Shift/Ctrl o R/F: al 50 % se mantiene en el aire' : 'Gases con Shift o R, suelta frenos con P', '', 5000);
 }
 
 // Contexto compartido con los modos de juego
@@ -311,15 +314,23 @@ function beginMission() {
     get mission() { return state.mission; },
     get world() { return state.world; }, get dest() { return state.dest; }, get seed() { return state.seed; },
     get origin() { return state.missionOrigin || state.origin; }, set origin(v) { state.missionOrigin = v; },
-    scene, combat: isCombat(settings.mode) ? combat : null, fx: particles, audio, toast,
+    scene, combat, fx: particles, audio, toast,
     showResult, hideResult: () => $('result').classList.add('hidden'), restart, toMenu, saveBest,
   };
   state.missionOrigin = null;
+  state.ctx = ctx;
+  state.training = null;
+  targeting.reset();
   state.mission = createMission(settings.mode, ctx);
-  const on = !!state.mission;
-  $('hud-mission').classList.toggle('hidden', !on);
-  $('btn-newdest').style.display = on ? 'none' : '';
+  $('btn-newdest').style.display = state.mission ? 'none' : '';
   return state.mission;
+}
+
+// Vuelo libre: armamento siempre listo y blancos de entrenamiento alrededor
+function startTraining() {
+  if (state.mission || !state.spec.arms) return;
+  state.training = new Training(state.ctx);
+  state.training.start();
 }
 
 function saveBest(key, score) {
@@ -489,12 +500,13 @@ function restart() {
   const m = beginMission();
   spawnAircraft(state.spec.id, m?.startInAir ? 'air' : 'runway');
   m?.start();
+  startTraining();
   toast('Vuelo reiniciado');
 }
 
 function toMenu() {
-  state.mission?.dispose(); state.mission = null;
-  combat.reset();
+  state.mission?.dispose(); state.mission = null; state.training = null;
+  combat.reset(); combat.player = null; targeting.reset();
   tacHud.clear();
   state.mode = 'menu';
   $('hud').classList.add('hidden');
@@ -550,6 +562,7 @@ addEventListener('keydown', (e) => {
     case 'KeyH': openWin('win-help'); break;
     case 'KeyM': $('btn-sound').click(); break;
     case 'KeyN': newDestinationHere(); break;
+    case 'Tab': if (targeting.next()) audio.click(); else toast('Sin blancos al alcance'); break;
     case 'Enter': if (fm.crashed) restart(); break;
     case 'Numpad4': state.headYawT = 90 * DEG; state.headPitchT = 0; break;
     case 'Numpad6': state.headYawT = -90 * DEG; state.headPitchT = 0; break;
@@ -638,6 +651,7 @@ function readInput(dt) {
     fm.throttle = clamp(fm.throttle + (rt - lt) * tRate * dt * 1.5, 0, 1);
     state.padPrev = state.padPrev || {};
     const edge = (i, fn) => { const p = !!gp.buttons[i]?.pressed; if (p && !state.padPrev[i]) fn(); state.padPrev[i] = p; };
+    edge(15, () => dispatchKey('Tab'));
     edge(0, () => dispatchKey('KeyG')); edge(3, () => dispatchKey('KeyC')); edge(2, () => dispatchKey('KeyX')); edge(9, () => dispatchKey('Escape'));
     if (gp.buttons[1]?.pressed) inp.brake = inp.speedbrake = true;
     if (gp.buttons[5]?.pressed) inp.gun = true;
@@ -670,7 +684,7 @@ function updateEffects(dt) {
       }
     }
     // humo de avería
-    const pl = state.mission?.combat?.player;
+    const pl = combat.player;
     if (pl && pl.hp < pl.maxHp * 0.4 && Math.random() < dt * 22) particles.puff(fm.pos.x, fm.pos.y, fm.pos.z, fm.vel.x * 0.2, fm.vel.y * 0.2 + 1, fm.vel.z * 0.2, 0.9 + Math.random(), 2.2, 0.12);
   } else if (Math.random() < dt * 7) {
     particles.puff(fm.pos.x + (Math.random() - 0.5) * 3, fm.pos.y + 1, fm.pos.z + (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 2, 7 + Math.random() * 3, (Math.random() - 0.5) * 2, 3 + Math.random() * 2, 5, 0.1);
@@ -703,8 +717,19 @@ function computeInstState() {
   inst.aoa = fm.aoa * RAD; inst.beta = fm.beta * RAD; inst.mach = fm.vel.length() / 340;
   inst.onGround = fm.onGround; inst.stall = fm.stall; inst.ab = fm.ab; inst.brakes = fm.brakes;
   inst.vsKt = (spec.vs || 20) * kt; inst.vmaxKt = spec.vmax * kt;
-  const pl = state.mission?.combat ? combat.player : null;
+  const pl = combat.player;
   inst.armed = !!pl && !!spec.arms;
+  // sistema de blancos para el HUD y la pantalla TGT
+  const tc = targeting.cur;
+  inst.tgt = tc ? {
+    id: targeting.idText(), identified: targeting.identified, air: tc.e.air, training: !!tc.e.training,
+    range: tc.range, az: tc.az, el: tc.el, off: tc.off, alt: tc.e.pos.y * ft,
+    lockT: targeting.lockT, locked: targeting.locked, gunAuto: targeting.gunAuto,
+    idx: targeting.list.indexOf(tc) + 1, n: targeting.list.length,
+  } : null;
+  inst.contacts = targeting.list;
+  inst.tgtTarget = targeting.target;
+  inst.tgtRange = targeting.P.air;
   inst.ammo = pl?.ammo ?? 0; inst.rockets = pl?.rockets ?? 0; inst.hp = pl ? pl.hp / pl.maxHp : 1;
   inst.heli = spec.type === 'heli';
   inst.agl = Math.max(0, fm.pos.y - spec.gearH - Math.max(0, state.world.groundHeight(fm.pos.x, fm.pos.z))) * ft;
@@ -735,16 +760,18 @@ function updateHUD(dt) {
   else if (inst.lowFuel) warn = 'COMBUSTIBLE';
   warnEl.textContent = warn;
   state.warn = warn;
-  if (state.mission) {
-    let html = state.mission.panel();
+  const mode = state.mission || state.training;
+  $('hud-mission').classList.toggle('hidden', !mode);
+  if (mode) {
+    let html = mode.panel();
     const pl = combat.player;
-    if (state.mission.combat && pl) html += ` · Blindaje ${Math.round(pl.hp / pl.maxHp * 100)} % · Cañón ${pl.ammo} · Cohetes ${pl.rockets} · ${combat.score} pts`;
+    if (pl) html += ` · Blindaje ${Math.round(pl.hp / pl.maxHp * 100)} % · Cañón ${pl.ammo} · Cohetes ${pl.rockets} · ${combat.score} pts`;
     $('hud-mission').innerHTML = html;
   }
   const nm = state.navMap;
   const nav = navTarget();
   nm.dest = nav ? { x: nav.x, z: nav.z, icao: nav.icao } : null;
-  nm.contacts = state.mission?.combat ? () => combat.alive.map(e => ({ x: e.pos.x, z: e.pos.z, air: e.air })) : () => [];
+  nm.contacts = () => combat.alive.map(e => ({ x: e.pos.x, z: e.pos.z, air: e.air }));
 }
 
 // ---------------- Cámara ----------------
@@ -882,9 +909,12 @@ function loop() {
       fm.step(STEP, state.input, env, state.world);
       acc -= STEP;
     }
-    const mc = state.mission?.combat;
-    if (mc) { mc.fire(state.input, dt); mc.update(dt, state.world); }
+    targeting.update(dt, fm, state.spec);
+    if (targeting.justLocked) audio.tone(1760, 0.12, 0.06);
+    combat.fire(state.input, dt, targeting);
+    combat.update(dt, state.world);
     state.mission?.update(dt);
+    state.training?.update(dt);
     state.distFlown += fm.pos.distanceTo(p0);
     if (!fm.crashed) state.flightTime += dt;
     for (const ev of fm.events) {
@@ -937,11 +967,11 @@ function loop() {
     warn: !!state.warn && !state.paused, warnType: fm.stall ? 'stall' : 'gear', crashed: fm.crashed,
   });
   fx.render(scene, camera, state.cam === 'cockpit');
-  const m = state.mission;
-  if (m) {
-    const pl = m.combat ? combat.player : null;
-    // en cabina la retícula la pone el HUD del avión: aquí solo marcadores
-    tacHud.draw(camera, { fm, markers: m.markers(), armed: !!pl && !!state.spec.arms && state.cam !== 'cockpit', hitFlash: pl?.hitFlash || 0, ammoEmpty: !!pl && pl.ammo <= 0 });
+  const pl = combat.player;
+  if (pl) {
+    // en cabina la retícula la pone el HUD del avión: aquí marcadores y designación del blanco
+    const markers = combat.alive.map(e => ({ pos: e.pos, vel: e.vel, label: e.kind, air: e.air, e }));
+    tacHud.draw(camera, { fm, markers, tg: targeting, armed: !!state.spec.arms && state.cam !== 'cockpit', hitFlash: pl.hitFlash || 0, ammoEmpty: pl.ammo <= 0 });
   } else tacHud.clear();
   // fuera de la cabina se ven el HUD del avión y el mapa móvil superpuestos
   if (state.cam !== 'cockpit' && !fm.crashed) {

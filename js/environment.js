@@ -1,8 +1,8 @@
 // Cielo, sol/luna, estrellas, iluminación, niebla, nubes, lluvia/nieve y rayos.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { clamp, lerp, smoothstep, mulberry32 } from './util.js?v=23';
-import { sharedUniforms } from './world.js?v=23';
+import { clamp, lerp, smoothstep, mulberry32 } from './util.js?v=27';
+import { sharedUniforms } from './world.js?v=27';
 
 export const WEATHER = {
   clear: { name: 'Despejado', clouds: 25, cloudBase: 1800, overcast: 0, fog: 28000, rain: 0, snow: 0, wind: 3, gust: 0.5, turb: 0, dark: 0, lightning: false },

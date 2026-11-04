@@ -14,15 +14,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 python3 -m http.server 8000   # then open http://localhost:8000
 ```
 
-There are no tests, linter or build. To verify changes, load the page in a browser and check the console. `window.__entreNubes` exposes `{ state, scene, camera, env }` for debugging (for example `state.fm` is the flight model and `state.world` the terrain).
+There are no tests, linter or build. To verify changes, load the page in a browser and check the console. `window.__entreNubes` exposes `{ state, scene, camera, env, combat, targeting, … }` for debugging (for example `state.fm` is the flight model and `state.world` the terrain).
 
-**Cache busting:** every local import carries `?v=N` (`from './world.js?v=23'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
+**Cache busting:** every local import carries `?v=N` (`from './world.js?v=27'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
 
 The game version shown to players (fixed `#version` label in the bottom-right corner on every screen, console, `window.__entreNubes.version`) is this same N, read from `import.meta.url` in `main.js`. Bumping the cache number therefore publishes a new version: bump it with every change that gets committed, and mention it in the commit message.
 
 ```
-sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=23'#g" js/*.js
-sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=23\"#g" index.html
+sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=27'#g" js/*.js
+sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=27\"#g" index.html
 ```
 
 ## Architecture
@@ -63,11 +63,16 @@ Main loop per frame: input → fixed-step physics (`STEP = 1/120`, accumulated) 
 - `physics.js`: `FlightModel`.
   - Planes use a lift/drag model with auto-trim toward level-flight angle of attack.
   - Helicopters are arcade-style: 50 % collective = hover, tilt is compensated, attitude-command cyclic, and drag is computed in ground axes so pitching forward accelerates instead of sinking.
-  - `input.assist` (the "pilotaje asistido" setting, on by default) changes behaviour. Planes: roll keys move a held bank target (`bankHold`, 70°/s, ±75°) that stays when released (the owner wants the turn kept until the opposite key is pressed; a ±4° detent snaps to wings level), plus coordinated-turn feed-forward and stall protection. Helicopters (`arcadeHeli`) are classic arcade, as the owner chose: W/S fly forwards/backwards only while held and brake to a hover on release, A/D yaw the nose, with the rate divided by `1 + vf/30` so turns widen with speed. The velocity is re-projected onto the new heading each step, and lateral grip absorbs the sideways part, so the path follows the nose with a few degrees of drift instead of rotating rigidly. Q/E strafe sideways. Nothing is held: releasing the keys levels and stops the helicopter. Assisted planes skip the bank-angle logic above 60° pitch, because Euler roll flips during loops.
+  - `input.assist` (the "pilotaje asistido" setting, on by default) changes behaviour. Planes: roll keys move a held bank target (`bankHold`, 70°/s, ±75°) that stays when released (the owner wants the turn kept until the opposite key is pressed; a ±4° detent snaps to wings level), plus coordinated-turn feed-forward and stall protection. Helicopters (`arcadeHeli`) are classic arcade, as the owner chose: W/S fly forwards/backwards only while held and brake to a hover on release, A/D yaw the nose, with the rate divided by `1 + vf/30` so turns widen with speed. The velocity is re-projected onto the new heading each step, and lateral grip absorbs the sideways part, so the path follows the nose with a few degrees of drift instead of rotating rigidly. Q/E strafe sideways. Nothing is held: releasing the keys levels and stops the helicopter. Its visual attitude is deliberately calm (the owner found it disorienting): pitch follows only the W/S input (−6°/+5°), and bank is at most 15°. Assisted planes skip the bank-angle logic above 60° pitch, because Euler roll flips during loops.
   - Ground contact handles crash rules and tire/skid friction.
 - `environment.js`: sky shader, sun and moon, stars, fog, instanced low-poly clouds plus an overcast layer, rain and snow, lightning, and wind. Weather presets are in `WEATHER`; transitions are interpolated.
 - `audio.js`: WebAudio-synthesized sounds only (no audio files). Initialized on the first user gesture.
-- `missions.js` (modes `free`, `cas`, `dogfight`; `free` has no mission object), `combat.js` (ballistics, rockets, ground units and AI fighters), `hud.js` (screen-space target markers; the gun reticle is suppressed in cockpit view), `postfx.js` (bloom + SSAO, disabled at low quality; optional final CRT monitor pass, setting `crt`, on by default, which keeps the composer alive at low quality without bloom/SSAO. Its barrel curvature `CRT_CURVE` is inverted in `hud.js` `toScreen` so tactical markers stay on their targets), `effects.js` (particles).
+- Weapons are always available (owner's request). `combat.armPlayer` runs in every mode.
+  - `missions.js` has modes `free`, `cas` and `dogfight`; `free` has no mission object. Instead it runs `Training` (`state.training`): non-firing training targets (`e.training`), which are vehicle groups plus circling drones (`combat.spawnDrone`). It keeps 6 ground targets and 3 drones ahead of the player, discards those left more than 14 km behind, and reloads the weapons when they run out.
+  - `targeting.js` (`Targeting`) is the cockpit target system. It locates units in range, auto-selects the one closest to the nose (Tab or gamepad D-pad right cycles), identifies it after 0.5 s, and locks it while it stays inside the lock cone. A wider hold cone gives hysteresis, and helicopters get wider cones than planes.
+  - Once locked, `combat.fire` aims the gun at the lead point (`leadPoint`: relative motion plus bullet drop) if the target is inside the gun cone, and rockets home on it with a proximity fuse. Rockets explode at the closest point of their step to the target, because at low FPS they move tens of metres per frame.
+  - The target data reaches the instruments as `inst.tgt` / `inst.contacts`. It drives the TGT MFD page (`instruments.targetPage`): the F-16/F-18/A-10 right MFD, the Apache/LHX left MFD, and the F-14 TID while the target is within 30° of the nose. It also drives the HUD target line and cue (`hudTarget`) and the designation box in `hud.js`.
+- `combat.js` (ballistics, rockets, ground units, AI fighters and drones), `hud.js` (screen-space target markers and the designated-target box; the gun reticle is suppressed in cockpit view), `postfx.js` (bloom + SSAO, disabled at low quality; optional final CRT monitor pass, setting `crt`, on by default, which keeps the composer alive at low quality without bloom/SSAO. Its barrel curvature `CRT_CURVE` is inverted in `hud.js` `toScreen` so tactical markers stay on their targets), `effects.js` (particles).
 
 Saved settings are migrated on load in `main.js`: unknown aircraft or mode ids fall back to defaults, and a `schema` number forces one-off resets.
 
