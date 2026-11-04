@@ -1,6 +1,6 @@
 // Modos de juego: ataque a tierra (CAS) e interceptación aérea.
 import * as THREE from 'three';
-import { mulberry32 } from './util.js?v=27';
+import { mulberry32 } from './util.js?v=33';
 
 export const MODES = [
   { id: 'free', name: 'Vuelo libre', icon: '☁', desc: 'Exploración sin límites sobre un mundo infinito, con ciclo de día y noche en tiempo real. Elige un destino y aterriza, o practica con los blancos de entrenamiento: vehículos y drones que no disparan.' },
@@ -220,12 +220,12 @@ export class Training {
       }
       if (this.cool <= 0) { this.fill(); this.cool = 8; }
     }
-    // recarga automática al quedarse sin munición o sin cohetes
+    // recarga automática al agotarse cualquiera de las armas
     const a = this.ctx.spec.arms;
-    if (a && (p.ammo <= 0 || p.rockets <= 0)) {
+    if (a && (p.ammo <= 0 || p.rockets <= 0 || (a.ag && p.ag <= 0) || (a.aa && p.aa <= 0))) {
       if (this.reload <= 0) { this.reload = 4; this.ctx.toast('Recargando armamento…', '', 3500); }
       this.reload -= dt;
-      if (this.reload <= 0) { p.ammo = a.gun.ammo; p.rockets = a.rockets; this.reload = 0; this.ctx.toast('Armamento recargado', 'good'); }
+      if (this.reload <= 0) { this.combat.rearm(); this.reload = 0; this.ctx.toast('Armamento recargado', 'good'); }
     }
   }
   panel() { return `<b>ENTRENAMIENTO</b> Blancos destruidos ${this.combat.kills}`; }

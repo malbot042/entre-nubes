@@ -1,6 +1,7 @@
 // Mapa móvil para las pantallas de cabina. El relieve (norte arriba, con
-// sombreado e hipsometría) se cachea en un canvas y se recalcula por filas
-// dentro de un presupuesto de tiempo cuando el avión se aleja del centro.
+// sombreado e hipsometría) se cachea en un canvas (ReliefCache, que también usa
+// el mapa táctico) y se recalcula por filas dentro de un presupuesto de tiempo
+// cuando el avión se aleja del centro.
 // El dibujo final va orientado al rumbo, con anillos de distancia, rosa de
 // rumbos, aeropuertos, destino y contactos.
 const SPAN = 32000;   // metros que cubre la caché
@@ -23,38 +24,44 @@ function tint(h) {
   return TINTS[TINTS.length - 1][1];
 }
 
-export class NavMap {
-  constructor(world) {
-    this.world = world;
+// Caché de relieve sombreado, norte arriba, de `span` metros en `res` píxeles.
+// Se calcula por filas con presupuesto de tiempo en un búfer trasero y se
+// publica entera al terminar; cada trabajo puede usar un alcance distinto.
+export class ReliefCache {
+  constructor(world, span, res) {
+    this.world = world; this.span = span; this.res = res;
     this.front = this.makeCanvas();
     this.back = this.makeCanvas();
-    this.cx = null; this.cz = null;   // centro de la caché visible
+    this.cx = null; this.cz = null;   // centro de la caché publicada
+    this.fspan = span;                // alcance de la caché publicada
     this.job = null;
-    this.contacts = () => [];          // [{x, z, air}] (lo rellena main en combate)
-    this.dest = null;                  // {x, z, icao}
   }
 
   makeCanvas() {
-    const cv = document.createElement('canvas'); cv.width = cv.height = RES;
+    const cv = document.createElement('canvas'); cv.width = cv.height = this.res;
     const g = cv.getContext('2d');
-    return { cv, g, img: g.createImageData(RES, RES) };
+    return { cv, g, img: g.createImageData(this.res, this.res) };
   }
 
-  startJob(x, z) {
+  get ready() { return this.cx !== null; }
+
+  startJob(x, z, span = this.span) {
     // la caché se alinea a una rejilla para que el redibujo no "nade"
-    const step = SPAN / RES;
+    const step = span / this.res;
     x = Math.round(x / step) * step; z = Math.round(z / step) * step;
-    this.job = { x, z, row: -1, prev: new Float32Array(RES + 1), cur: new Float32Array(RES + 1) };
+    this.job = { x, z, span, row: -1, prev: new Float32Array(this.res + 1), cur: new Float32Array(this.res + 1) };
   }
 
   // Calcula una fila de alturas (con una columna extra a la izquierda para el sombreado)
   rowHeights(job, j, out) {
-    const step = SPAN / RES, x0 = job.x - SPAN / 2, z = job.z - SPAN / 2 + (j + 0.5) * step;
-    for (let i = -1; i < RES; i++) out[i + 1] = this.world.height(x0 + (i + 0.5) * step, z);
+    const step = job.span / this.res, x0 = job.x - job.span / 2, z = job.z - job.span / 2 + (j + 0.5) * step;
+    for (let i = -1; i < this.res; i++) out[i + 1] = this.world.height(x0 + (i + 0.5) * step, z);
   }
 
   shadeRow(job, j) {
-    const w = this.world, step = SPAN / RES, x0 = job.x - SPAN / 2, z = job.z - SPAN / 2 + (j + 0.5) * step;
+    const w = this.world, RES = this.res, step = job.span / RES, x0 = job.x - job.span / 2, z = job.z - job.span / 2 + (j + 0.5) * step;
+    // el sombreado depende de la pendiente: se normaliza al tamaño del píxel
+    const shade = 0.0045 * 143 / step;
     const d = this.back.img.data, prev = job.prev, cur = job.cur;
     for (let i = 0; i < RES; i++) {
       const x = x0 + (i + 0.5) * step;
@@ -75,7 +82,7 @@ export class NavMap {
           c = mix(c, [40, 86, 44], 0.75);
         }
         // sombreado del relieve con luz del noroeste
-        const s = Math.max(0.55, Math.min(1.5, 1 + ((h - hl) + (h - hu)) * 0.0045));
+        const s = Math.max(0.55, Math.min(1.5, 1 + ((h - hl) + (h - hu)) * shade));
         c = [c[0] * s, c[1] * s, c[2] * s];
       }
       const k = (j * RES + i) * 4;
@@ -83,14 +90,12 @@ export class NavMap {
     }
   }
 
-  // Avanza el trabajo de relieve; budgetMs = Infinity lo completa de golpe
-  update(x, z, budgetMs = 1.5) {
-    if (!this.job) {
-      if (this.cx !== null && Math.hypot(x - this.cx, z - this.cz) < SPAN * 0.18) return;
-      this.startJob(x, z);
-    }
-    const job = this.job, t0 = performance.now();
-    while (job.row < RES) {
+  // Avanza el trabajo en curso; budgetMs = Infinity lo completa de golpe
+  step(budgetMs) {
+    const job = this.job;
+    if (!job) return;
+    const t0 = performance.now();
+    while (job.row < this.res) {
       if (job.row < 0) this.rowHeights(job, -1, job.prev);
       else {
         this.rowHeights(job, job.row, job.cur);
@@ -103,9 +108,29 @@ export class NavMap {
     // terminado: se publica la caché nueva
     this.back.g.putImageData(this.back.img, 0, 0);
     const f = this.front; this.front = this.back; this.back = f;
-    this.cx = job.x; this.cz = job.z;
+    this.cx = job.x; this.cz = job.z; this.fspan = job.span;
     this.job = null;
   }
+
+  // Recalcula alrededor de (x, z) cuando el centro se ha alejado lo bastante
+  update(x, z, budgetMs = 1.5) {
+    if (!this.job) {
+      if (this.cx !== null && Math.hypot(x - this.cx, z - this.cz) < this.span * 0.18) return;
+      this.startJob(x, z);
+    }
+    this.step(budgetMs);
+  }
+}
+
+export class NavMap {
+  constructor(world) {
+    this.world = world;
+    this.relief = new ReliefCache(world, SPAN, RES);
+    this.contacts = () => [];          // [{x, z, air}] (lo rellena main)
+    this.dest = null;                  // {x, z, icao}
+  }
+
+  update(x, z, budgetMs = 1.5) { this.relief.update(x, z, budgetMs); }
 
   // ---------- dibujo en una pantalla ----------
   // s: estado de instrumentos (hdg en grados); pos: posición del avión
@@ -124,12 +149,13 @@ export class NavMap {
     g.beginPath(); g.rect(x, y, w, h); g.clip();
     g.fillStyle = '#04070a'; g.fillRect(x, y, w, h);
     // relieve
-    if (this.cx !== null) {
+    const rc = this.relief;
+    if (rc.ready) {
       g.save();
       g.translate(ox, oy); g.rotate(-hdg);
       g.imageSmoothingEnabled = true;
       g.globalAlpha = 0.92;
-      g.drawImage(this.front.cv, (this.cx - SPAN / 2 - pos.x) * k, (this.cz - SPAN / 2 - pos.z) * k, SPAN * k, SPAN * k);
+      g.drawImage(rc.front.cv, (rc.cx - rc.fspan / 2 - pos.x) * k, (rc.cz - rc.fspan / 2 - pos.z) * k, rc.fspan * k, rc.fspan * k);
       g.restore();
       // velo para que resalten los símbolos
       const vg = g.createRadialGradient(ox, oy, rPx * 0.3, ox, oy, rPx * 1.5);

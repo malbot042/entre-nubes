@@ -488,8 +488,8 @@ function hudFooter(g, W, H, s) {
   }
   if (s.armed) {
     hudFont(g, 16);
-    g.fillText(`GUN ${s.ammo}`, W * 0.3, H * 0.9);
-    g.fillText(`RKT ${s.rockets}`, W * 0.7, H * 0.9);
+    g.fillText(`GUN ${s.ammo}${s.gunMode ? ' ' + s.gunMode : ''}`, W * 0.3, H * 0.9);
+    g.fillText(s.wsel || `RKT ${s.rockets}`, W * 0.7, H * 0.9);
     g.strokeRect(W * 0.42, H * 0.893, W * 0.16, 8);
     g.fillRect(W * 0.42, H * 0.893, W * 0.16 * Math.max(0, s.hp), 8);
   }
@@ -516,9 +516,9 @@ function hudTarget(g, W, H, s) {
   }
   hudFont(g, 16); g.textAlign = 'center';
   const rng = t.range < 1000 ? `${Math.round(t.range)} M` : `${(t.range / 1000).toFixed(1)} KM`;
-  const st = t.locked ? (t.gunAuto ? 'LOCK · GUN AUTO' : 'LOCK') : 'FIJANDO';
+  const st = t.locked ? (t.gunAuto ? 'LOCK · GUN AUTO' : 'LOCK') : t.far ? 'LEJOS' : 'FIJANDO';
   g.fillText(`TGT ${t.id}  ${rng}  ${st}`, W / 2, H * 0.79);
-  if (!t.locked) {
+  if (!t.locked && !t.far) {
     g.strokeRect(W * 0.4, H * 0.81, W * 0.2, 6);
     g.fillRect(W * 0.4, H * 0.81, W * 0.2 * t.lockT, 6);
   }
@@ -583,7 +583,7 @@ export function targetPage(g, x, y, w, h, s) {
     return;
   }
   const rng = t.range < 1000 ? `${Math.round(t.range)} M` : `${(t.range / 1000).toFixed(1)} KM`;
-  g.fillText(`${t.idx}/${t.n}  ${t.id}`, x + w * 0.05, by + h * 0.035);
+  g.fillText(`${t.far ? 'MAPA' : `${t.idx}/${t.n}`}  ${t.id}`, x + w * 0.05, by + h * 0.035);
   f(h * 0.05);
   const side = Math.abs(t.az) < 1 ? '' : t.az > 0 ? ' DCHA' : ' IZDA';
   g.fillText(`DIST ${rng}   AZ ${Math.round(Math.abs(t.az))}°${side}`, x + w * 0.05, by + h * 0.1);
@@ -598,7 +598,7 @@ export function targetPage(g, x, y, w, h, s) {
     g.strokeRect(x + w * 0.05, sy - h * 0.03, w * 0.9, h * 0.06);
     g.fillRect(x + w * 0.05, sy - h * 0.03, w * 0.9 * t.lockT, h * 0.06);
     g.fillStyle = t.lockT > 0.5 ? '#000' : TG; g.textAlign = 'center'; f(h * 0.045);
-    g.fillText(t.off < 60 ? 'FIJANDO… MORRO AL BLANCO' : 'GIRA HACIA EL BLANCO', x + w / 2, sy + 1);
+    g.fillText(t.far ? 'FUERA DE ALCANCE: VE HACIA ÉL' : t.off < 60 ? 'FIJANDO… MORRO AL BLANCO' : 'GIRA HACIA EL BLANCO', x + w / 2, sy + 1);
   }
 }
 

@@ -16,13 +16,13 @@ python3 -m http.server 8000   # then open http://localhost:8000
 
 There are no tests, linter or build. To verify changes, load the page in a browser and check the console. `window.__entreNubes` exposes `{ state, scene, camera, env, combat, targeting, … }` for debugging (for example `state.fm` is the flight model and `state.world` the terrain).
 
-**Cache busting:** every local import carries `?v=N` (`from './world.js?v=27'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
+**Cache busting:** every local import carries `?v=N` (`from './world.js?v=33'`), and so do `js/main.js` and `css/style.css` in `index.html`. When changing JS, bump N everywhere in one go and keep it identical across all files. If two files import the same module with different query strings, the browser loads two separate instances, which breaks shared singletons such as `sharedUniforms` in `world.js`.
 
 The game version shown to players (fixed `#version` label in the bottom-right corner on every screen, console, `window.__entreNubes.version`) is this same N, read from `import.meta.url` in `main.js`. Bumping the cache number therefore publishes a new version: bump it with every change that gets committed, and mention it in the commit message.
 
 ```
-sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=27'#g" js/*.js
-sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=27\"#g" index.html
+sed -i -E "s#(from '\./[a-z]+\.js)(\?v=[0-9]+)?'#\1?v=33'#g" js/*.js
+sed -i -E "s#(js/main\.js|css/style\.css)(\?v=[0-9]+)?\"#\1?v=33\"#g" index.html
 ```
 
 ## Architecture
@@ -59,7 +59,10 @@ Main loop per frame: input → fixed-step physics (`STEP = 1/120`, accumulated) 
   - Decals are canvas textures (`DECALS.*`) placed with `addDecal` (`'side'` faces +X, `mirror` adds the −X copy; `flipText:false` mirrors the art instead of keeping text readable).
   - It also adds edge outlines (`EdgesGeometry`, toggled by `setEdgesVisible`; call `forgetEdges` when discarding a model) and registers materials for the PMREM sky reflection whose intensity `main.js` scales with daylight.
 - `cockpit.js`: interior builders keyed by `spec.cockpit`, with coordinates relative to the eye. Panels are declared in `PANELS` as items in canvas pixels (`mfd`, `gauge`, `box`, plus static `deco`) and built in three layers: a static lit faceplate canvas (with bump), a transparent self-lit live canvas redrawn at about 15 Hz by `instruments.js`, and real geometry (bezels, instanced push-buttons, gauge rings, glass). The HUD redraws at 30 Hz.
-- `navmap.js`: moving map for the cockpit MFDs. A north-up shaded-relief cache (32 km) is rebuilt row by row within a time budget (`update`, called every frame; primed synchronously in `startFlight`), then drawn heading-up with range rings, airports, route and combat contacts.
+- `navmap.js`: moving map for the cockpit MFDs. `ReliefCache` is a north-up shaded-relief canvas of any span and resolution. It is rebuilt row by row within a time budget into a back buffer and published when finished. `NavMap` keeps a 32 km cache around the aircraft (`update`, called every frame; primed synchronously in `startFlight`) and draws it heading-up with range rings, airports, route and combat contacts.
+- `tacmap.js`: full-screen tactical map (J or the toolbar button). Mouse wheel zooms around the cursor and dragging pans; it follows the aircraft until panned. It shows airports, the route, the aircraft and every target, with a side list sorted by distance. Clicking a target on the map or in the list designates it (`targeting.select(e, true)`); a manual designation is kept even out of range (`cur.far`), and the HUD arrow guides the player to it.
+  - The relief layers a 96 km cache around the aircraft (kept warm with a 0.4 ms budget while the map is closed), the NavMap cache, and a detail cache that follows the view and is rebuilt on zoom.
+  - The list selects on `pointerdown`: it is regenerated several times a second, and a click spanning two regenerations would be lost.
 - `physics.js`: `FlightModel`.
   - Planes use a lift/drag model with auto-trim toward level-flight angle of attack.
   - Helicopters are arcade-style: 50 % collective = hover, tilt is compensated, attitude-command cyclic, and drag is computed in ground axes so pitching forward accelerates instead of sinking.
@@ -72,7 +75,10 @@ Main loop per frame: input → fixed-step physics (`STEP = 1/120`, accumulated) 
   - `targeting.js` (`Targeting`) is the cockpit target system. It locates units in range, auto-selects the one closest to the nose (Tab or gamepad D-pad right cycles), identifies it after 0.5 s, and locks it while it stays inside the lock cone. A wider hold cone gives hysteresis, and helicopters get wider cones than planes.
   - Once locked, `combat.fire` aims the gun at the lead point (`leadPoint`: relative motion plus bullet drop) if the target is inside the gun cone, and rockets home on it with a proximity fuse. Rockets explode at the closest point of their step to the target, because at low FPS they move tens of metres per frame.
   - The target data reaches the instruments as `inst.tgt` / `inst.contacts`. It drives the TGT MFD page (`instruments.targetPage`): the F-16/F-18/A-10 right MFD, the Apache/LHX left MFD, and the F-14 TID while the target is within 30° of the nose. It also drives the HUD target line and cue (`hudTarget`) and the designation box in `hud.js`.
-- `combat.js` (ballistics, rockets, ground units, AI fighters and drones), `hud.js` (screen-space target markers and the designated-target box; the gun reticle is suppressed in cockpit view), `postfx.js` (bloom + SSAO, disabled at low quality; optional final CRT monitor pass, setting `crt`, on by default, which keeps the composer alive at low quality without bloom/SSAO. Its barrel curvature `CRT_CURVE` is inverted in `hud.js` `toScreen` so tactical markers stay on their targets), `effects.js` (particles).
+- Weapon selection: each aircraft's `ARMS` entry (`aircraft.js`) has a gun, rockets, and optional `ag` (air-to-ground) and `aa` (air-to-air) missiles. Space always fires the gun; Z fires the weapon in `combat.prefs.sel` (Y cycles it). `combat.prefs` also holds the gun mode (`burst`: 0.4 s per press), automatic gun aim (`aim`) and the rocket salvo (`salvo`, 0 = continuous); `main.js` saves it in `settings.weapons`.
+  - Missiles need a locked target of the right kind (`aa` air, `ag` ground). They are homing projectiles in `combat.rockets` with their own thrust, turn rate, life and a direct-hit `dmg`. Refusals are reported through `combat.notify`.
+  - `armory.js` is the weapons screen (I or the toolbar button). It shows a top-view diagram of the stores, a card per weapon with its firing options and readiness against the current target, and the target status. Like the map's target list, its buttons act on `pointerdown`.
+- `combat.js` (ballistics, rockets, missiles, ground units, AI fighters and drones), `hud.js` (screen-space target markers and the designated-target box; the gun reticle is suppressed in cockpit view), `postfx.js` (bloom + SSAO, disabled at low quality; optional final CRT monitor pass, setting `crt`, on by default, which keeps the composer alive at low quality without bloom/SSAO. Its barrel curvature `CRT_CURVE` is inverted in `hud.js` `toScreen` so tactical markers stay on their targets), `effects.js` (particles).
 
 Saved settings are migrated on load in `main.js`: unknown aircraft or mode ids fall back to defaults, and a `schema` number forces one-off resets.
 

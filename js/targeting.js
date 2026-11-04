@@ -3,10 +3,11 @@
 // (Tab pasa a la siguiente), la identifica en medio segundo y la fija cuando se
 // mantiene dentro del cono de fijación. Con el blanco fijado el cañón apunta
 // solo (dentro de su cono) y los cohetes salen guiados: no hace falta poner el
-// morro exactamente sobre el blanco.
+// morro exactamente sobre el blanco. Un blanco elegido en el mapa táctico se
+// mantiene aunque esté fuera de alcance: el HUD guía hasta él y se fija al llegar.
 import * as THREE from 'three';
-import { KINDS } from './combat.js?v=27';
-import { clamp, DEG } from './util.js?v=27';
+import { KINDS } from './combat.js?v=33';
+import { clamp, DEG } from './util.js?v=33';
 
 const _d = new THREE.Vector3(), _q = new THREE.Quaternion();
 
@@ -24,7 +25,7 @@ export class Targeting {
   }
 
   reset() {
-    this.target = null; this.cur = null; this.list = [];
+    this.target = null; this.cur = null; this.list = []; this.manual = false;
     this.lockT = 0; this.idT = 0; this.locked = false; this.justLocked = false; this.gunAuto = false;
     this.P = PARAMS.plane;
   }
@@ -58,9 +59,12 @@ export class Targeting {
     list.sort((a, b) => a.off - b.off);
     this.list = list;
     let cur = this.target ? list.find(c => c.e === this.target) : null;
+    if (!cur && this.manual && this.target && !this.target.dead && this.combat.player && !fm.crashed) {
+      cur = this.rel(this.target, fm); cur.far = true;
+    }
     if (!cur) {
       // blanco perdido o destruido: selección automática del más centrado
-      this.target = null; this.lockT = 0; this.locked = false;
+      this.target = null; this.lockT = 0; this.locked = false; this.manual = false;
       const best = list.find(c => c.off < P.search);
       if (best) { this.select(best.e); cur = best; }
     }
@@ -69,7 +73,7 @@ export class Targeting {
     this.idT += dt;
     // histéresis: fijar exige estar dentro del cono de fijación; para perder la
     // fijación hay que salirse del cono de mantenimiento, más amplio
-    const inCone = cur.off < (this.locked ? P.hold : P.lock);
+    const inCone = !cur.far && cur.off < (this.locked ? P.hold : P.lock);
     this.lockT = inCone ? Math.min(1, this.lockT + dt / P.lockTime) : Math.max(0, this.lockT - dt * 2);
     const was = this.locked;
     this.locked = this.lockT >= 1;
@@ -77,15 +81,16 @@ export class Targeting {
     this.gunAuto = this.locked && cur.off < P.gun && cur.range < P.gunRange;
   }
 
-  select(e) {
-    this.target = e; this.lockT = 0; this.idT = 0; this.locked = false;
+  // manual: elegido por el jugador (Tab o mapa); no se sustituye aunque salga de alcance
+  select(e, manual = false) {
+    this.target = e; this.lockT = 0; this.idT = 0; this.locked = false; this.manual = manual;
   }
 
   // Tab: siguiente blanco por orden de cercanía al morro
   next() {
     if (!this.list.length) return false;
     const i = this.list.findIndex(c => c.e === this.target);
-    this.select(this.list[(i + 1) % this.list.length].e);
+    this.select(this.list[(i + 1) % this.list.length].e, true);
     return true;
   }
 

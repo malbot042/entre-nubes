@@ -7,7 +7,7 @@
   <meta name="description" content="Simulador y arcade de vuelo 3D en el navegador: F-14, F-16, F/A-18, A-10, Apache y LHX con estética low-poly retro, render moderno, combate aéreo y ataque a tierra.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=27">
+  <link rel="stylesheet" href="css/style.css?v=33">
   <script type="importmap">
   {
     "imports": {
@@ -26,6 +26,8 @@
     <div id="hud-mission" class="chip hidden"></div>
     <div id="toolbar">
       <button id="btn-cam" title="Cámara (C)">◉</button>
+      <button id="btn-map" title="Mapa táctico (J)">⌖</button>
+      <button id="btn-arms" title="Armamento y tiro (I)">✦</button>
       <button data-win="win-weather" title="Clima y hora (T)">☁</button>
       <button data-win="win-settings" title="Ajustes (O)">⚙</button>
       <button data-win="win-help" title="Controles (H)">?</button>
@@ -34,6 +36,19 @@
     </div>
     <div id="messages"></div>
     <div id="warn"></div>
+  </div>
+
+  <!-- ================= MAPA TÁCTICO ================= -->
+  <div id="tacmap" class="hidden">
+    <canvas id="tacmap-cv"></canvas>
+    <div id="tacmap-side">
+      <div class="win-head">Mapa táctico <button class="close" id="tacmap-close">✕</button></div>
+      <div id="tacmap-sel"></div>
+      <div class="tm-list-title">Blancos por distancia</div>
+      <div id="tacmap-list"></div>
+      <button id="tacmap-center">Centrar en mi aeronave</button>
+      <div class="tm-help">Rueda: zoom · Arrastrar: mover · Clic en un blanco: designarlo · J o Esc: cerrar</div>
+    </div>
   </div>
 
   <!-- ================= MENÚ PRINCIPAL ================= -->
@@ -48,7 +63,6 @@
       <div id="mode-tabs" class="modes"></div>
 
       <div class="section-title"><span>02</span> Aeronave</div>
-      <div id="cat-tabs" class="tabs"></div>
       <div id="aircraft-list" class="cards"></div>
 
       <div class="section-title"><span>03</span> Condiciones</div>
@@ -125,6 +139,16 @@
     </div>
   </div>
 
+  <div id="armory" class="window hidden">
+    <div class="win-head">Armamento y tiro <button class="close">✕</button></div>
+    <div class="win-body arm-body">
+      <canvas id="arm-diagram" width="340" height="230"></canvas>
+      <div id="arm-cards"></div>
+      <div id="arm-target"></div>
+      <div class="tm-help">Espacio: cañón · Z: arma seleccionada · Y: cambiar de arma · Tab: siguiente blanco · I o Esc: cerrar</div>
+    </div>
+  </div>
+
   <div id="win-weather" class="window hidden">
     <div class="win-head">Clima y hora <button class="close">✕</button></div>
     <div class="win-body">
@@ -153,9 +177,11 @@
         <tr><td>A / D</td><td>Girar el morro a izquierda / derecha</td></tr>
         <tr><td>Q / E</td><td>Desplazarse de lado a izquierda / derecha</td></tr>
         <tr><th colspan="2">Armas (siempre disponibles; en vuelo libre hay blancos de entrenamiento)</th></tr>
-        <tr><td>Espacio · Z</td><td>Cañón · cohetes</td></tr>
+        <tr><td>Espacio · Z</td><td>Cañón · arma seleccionada (cohetes o misiles)</td></tr>
+        <tr><td>Y · I</td><td>Cambiar el arma de Z · pantalla de armamento y tiro (modo del cañón, salva de cohetes)</td></tr>
+        <tr><td>J</td><td>Mapa táctico: zoom con la rueda, arrastrar para moverlo, clic en un blanco para designarlo</td></tr>
         <tr><td>Tab</td><td>Siguiente blanco. El sistema elige solo el más centrado, lo identifica y lo fija si mantienes el morro hacia él</td></tr>
-        <tr><td>Blanco fijado</td><td>El cañón apunta solo si el blanco está cerca del morro y los cohetes salen guiados</td></tr>
+        <tr><td>Blanco fijado</td><td>El cañón apunta solo si el blanco está cerca del morro, los cohetes salen guiados y se pueden lanzar misiles (aire-tierra contra vehículos, aire-aire contra aeronaves)</td></tr>
         <tr><th colspan="2">Cámara</th></tr>
         <tr><td>C</td><td>Cabina / exterior / pasada</td></tr>
         <tr><td>Arrastrar ratón · rueda</td><td>Mirar alrededor · en cabina, acercarse al HUD y a las pantallas; fuera, distancia de la cámara</td></tr>
@@ -194,6 +220,6 @@
   <div id="version" data-version></div>
   <div id="loading" class="overlay hidden"><div class="spinner"></div><div id="loading-text">Generando terreno…</div></div>
   <noscript>Este simulador necesita JavaScript y WebGL.</noscript>
-  <script type="module" src="js/main.js?v=27"></script>
+  <script type="module" src="js/main.js?v=33"></script>
 </body>
 </html>

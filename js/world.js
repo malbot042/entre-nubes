@@ -2,8 +2,8 @@
 // ciudades, pueblos, granjas, bosques, aerogeneradores y aeropuertos.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Noise2D, mulberry32, hash2, clamp, lerp, smoothstep, randomPlaceName, randomICAO } from './util.js?v=27';
-import { buildModel } from './models.js?v=27';
+import { Noise2D, mulberry32, hash2, clamp, lerp, smoothstep, randomPlaceName, randomICAO } from './util.js?v=33';
+import { buildModel } from './models.js?v=33';
 
 export const CHUNK = 1000;
 const CITY_CELL = 6000;

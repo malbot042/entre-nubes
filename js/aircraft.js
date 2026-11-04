@@ -3,11 +3,6 @@
 // máxima, relación empuje/peso, regímenes de giro).
 // `rating` (1–5) solo alimenta las barras del menú.
 
-export const CATEGORIES = [
-  { id: 'plane', name: 'Aviones' },
-  { id: 'heli', name: 'Helicópteros' },
-];
-
 export const AIRCRAFT = [
   {
     id: 'f14', name: 'F-14 Tomcat', cat: 'plane', role: 'Interceptor naval', livery: 'VF-84 «Jolly Rogers»',
@@ -65,15 +60,20 @@ export const AIRCRAFT = [
   },
 ];
 
-// Armamento: cañón (disparos/s, daño, munición, bocas), cohetes no guiados y resistencia.
+// Armamento: cañón (disparos/s, daño, munición, bocas), cohetes no guiados (o
+// guiados con blanco fijado), misiles aire-tierra (ag) y aire-aire (aa), y resistencia.
 const gun = (rps, dmg, ammo, ...at) => ({ rps, dmg, ammo, at });
+const AIM9 = (n) => ({ name: 'AIM-9 Sidewinder', short: 'AIM-9', n });
+const AGM65 = (n) => ({ name: 'AGM-65 Maverick', short: 'AGM-65', n });
+const STINGER = (n) => ({ name: 'AIM-92 Stinger', short: 'STINGER', n });
+const HELLFIRE = (n) => ({ name: 'AGM-114 Hellfire', short: 'HELLFIRE', n });
 const ARMS = {
-  a10: { gun: gun(28, 20, 1150, [0, -0.28, -9.8]), rockets: 38, racks: [[3.6, -0.75, -1.6], [5.2, -0.75, -1.6]], hp: 280 },
-  apache: { gun: gun(10, 14, 1200, [0, -1.25, -3.6]), rockets: 38, racks: [[2.1, -0.4, -0.8]], hp: 200 },
-  lhx: { gun: gun(12, 12, 500, [0, -0.7, -3.6]), rockets: 24, racks: [[1.6, -0.3, -0.4]], hp: 140 },
-  f14: { gun: gun(20, 9, 675, [-0.8, 0.1, -7.2]), rockets: 14, racks: [[2.4, -0.6, -1]], hp: 140 },
-  f16: { gun: gun(20, 9, 510, [-0.7, 0.3, -4.6]), rockets: 14, racks: [[3.2, -0.5, 0.5]], hp: 110 },
-  f18: { gun: gun(20, 9, 578, [0, 0.25, -8.4]), rockets: 14, racks: [[4, -0.5, 0.5]], hp: 120 },
+  a10: { gun: gun(28, 20, 1150, [0, -0.28, -9.8]), rockets: 38, racks: [[3.6, -0.75, -1.6], [5.2, -0.75, -1.6]], aa: AIM9(2), ag: AGM65(6), hp: 280 },
+  apache: { gun: gun(10, 14, 1200, [0, -1.25, -3.6]), rockets: 38, racks: [[2.1, -0.4, -0.8]], aa: STINGER(4), ag: HELLFIRE(8), hp: 200 },
+  lhx: { gun: gun(12, 12, 500, [0, -0.7, -3.6]), rockets: 24, racks: [[1.6, -0.3, -0.4]], aa: STINGER(2), ag: HELLFIRE(4), hp: 140 },
+  f14: { gun: gun(20, 9, 675, [-0.8, 0.1, -7.2]), rockets: 14, racks: [[2.4, -0.6, -1]], aa: AIM9(4), ag: null, hp: 140 },
+  f16: { gun: gun(20, 9, 510, [-0.7, 0.3, -4.6]), rockets: 14, racks: [[3.2, -0.5, 0.5]], aa: AIM9(4), ag: AGM65(2), hp: 110 },
+  f18: { gun: gun(20, 9, 578, [0, 0.25, -8.4]), rockets: 14, racks: [[4, -0.5, 0.5]], aa: AIM9(4), ag: AGM65(2), hp: 120 },
 };
 for (const a of AIRCRAFT) a.arms = ARMS[a.id] || null;
 

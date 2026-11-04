@@ -2,7 +2,7 @@
 // unidades enemigas e IA, y blancos de entrenamiento que no disparan.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { clamp, lerp } from './util.js?v=27';
+import { clamp, lerp } from './util.js?v=33';
 
 const G = 9.81;
 const BULLET_V = 1050, MAX_BULLETS = 500;
@@ -107,7 +107,18 @@ export class Combat {
       paint(new THREE.CylinderGeometry(0.07, 0.07, 1.5, 5).rotateX(Math.PI / 2), 0xd8d8cc),
       paint(new THREE.ConeGeometry(0.07, 0.3, 5).rotateX(-Math.PI / 2).translate(0, 0, -0.9), 0xc83a2a),
     );
+    this.missileGeo = merged(
+      paint(new THREE.CylinderGeometry(0.11, 0.11, 2.6, 6).rotateX(Math.PI / 2), 0xe8e8e2),
+      paint(new THREE.ConeGeometry(0.11, 0.4, 6).rotateX(-Math.PI / 2).translate(0, 0, -1.5), 0x8a8f96),
+      box(0.62, 0.03, 0.3, 0, 0, 1.05, 0x8a8f96), box(0.03, 0.62, 0.3, 0, 0, 1.05, 0x8a8f96),
+      box(0.4, 0.03, 0.2, 0, 0, -0.9, 0x8a8f96), box(0.03, 0.4, 0.2, 0, 0, -0.9, 0x8a8f96),
+    );
     this.rocketMat = matFor();
+    // preferencias de tiro (las guarda main en los ajustes): arma de Z, cañón por
+    // ráfagas o continuo, puntería automática y salva de cohetes (0 = continua)
+    this.prefs = { sel: 'rkt', burst: false, aim: true, salvo: 0 };
+    this.notify = null; // (texto, clase) → aviso en pantalla
+    this.salvo = 0; this.burstT = 0; this.prevGun = false; this.prevSec = false;
     this.color = new THREE.Color();
   }
 
@@ -128,8 +139,34 @@ export class Combat {
 
   armPlayer(fm, spec, model) {
     const a = spec.arms;
-    this.player = { fm, spec, model, hp: a ? a.hp : 100, maxHp: a ? a.hp : 100, ammo: a ? a.gun.ammo : 0, rockets: a ? a.rockets : 0, radius: Math.max(7, (model?.size || 20) * 0.28), hitFlash: 0 };
+    this.player = { fm, spec, model, hp: a ? a.hp : 100, maxHp: a ? a.hp : 100, ammo: a ? a.gun.ammo : 0, rockets: a ? a.rockets : 0, aa: a?.aa ? a.aa.n : 0, ag: a?.ag ? a.ag.n : 0, radius: Math.max(7, (model?.size || 20) * 0.28), hitFlash: 0 };
     this.bullets.length = 0;
+    this.salvo = 0; this.burstT = 0;
+    if (!this.weapons().some(w => w.id === this.prefs.sel)) this.prefs.sel = 'rkt';
+  }
+
+  // armas que dispara Z en la aeronave actual, con su munición
+  weapons() {
+    const p = this.player, a = p?.spec.arms;
+    if (!a) return [];
+    const w = [{ id: 'rkt', name: 'Cohetes de 70 mm', short: 'RKT', n: p.rockets, max: a.rockets }];
+    if (a.ag) w.push({ id: 'ag', name: a.ag.name, short: a.ag.short, n: p.ag, max: a.ag.n, vs: 'ground' });
+    if (a.aa) w.push({ id: 'aa', name: a.aa.name, short: a.aa.short, n: p.aa, max: a.aa.n, vs: 'air' });
+    return w;
+  }
+  get selected() { return this.weapons().find(w => w.id === this.prefs.sel) || null; }
+  selectWeapon(id) { if (this.weapons().some(w => w.id === id)) { this.prefs.sel = id; this.salvo = 0; } }
+  cycleWeapon() {
+    const w = this.weapons();
+    if (!w.length) return null;
+    const i = w.findIndex(x => x.id === this.prefs.sel);
+    this.selectWeapon(w[(i + 1) % w.length].id);
+    return this.selected;
+  }
+  rearm() {
+    const p = this.player, a = p?.spec.arms;
+    if (!a) return;
+    p.ammo = a.gun.ammo; p.rockets = a.rockets; p.aa = a.aa ? a.aa.n : 0; p.ag = a.ag ? a.ag.n : 0;
   }
 
   spawnGround(kind, x, y, z, heading = 0, level = 1) {
@@ -184,14 +221,19 @@ export class Combat {
 
   // ---- armas del jugador ----
   // tg: sistema de fijación. Con un blanco fijado, el cañón apunta solo al punto
-  // de impacto previsto si está dentro de su cono, y los cohetes salen guiados.
+  // de impacto previsto si está dentro de su cono (y la puntería automática está
+  // activa), los cohetes salen guiados y se pueden lanzar misiles.
   fire(input, dt, tg = null) {
     const p = this.player;
     if (!p || p.fm.crashed || !p.spec.arms) return;
-    const a = p.spec.arms, fm = p.fm;
-    const auto = tg && tg.gunAuto ? tg.target : null;
+    const a = p.spec.arms, fm = p.fm, pr = this.prefs;
+    const auto = pr.aim && tg && tg.gunAuto ? tg.target : null;
     this.gunT -= dt; this.rocketT -= dt;
-    if (input.gun && p.ammo > 0) {
+    // gatillo del cañón: continuo o ráfagas de 0,4 s por pulsación
+    const gunEdge = input.gun && !this.prevGun; this.prevGun = !!input.gun;
+    if (pr.burst) { if (gunEdge) this.burstT = 0.4; this.burstT -= dt; }
+    const gunOn = pr.burst ? this.burstT > 0 : input.gun;
+    if (gunOn && p.ammo > 0) {
       while (this.gunT <= 0 && p.ammo > 0) {
         this.gunT += 1 / a.gun.rps;
         p.ammo--;
@@ -209,18 +251,53 @@ export class Combat {
       }
       if (this.frame % 3 === 0) this.audio.gun();
     } else if (this.gunT < 0) this.gunT = 0;
-    if (input.rocket && p.rockets > 0 && this.rocketT <= 0) {
-      this.rocketT = 0.16;
-      p.rockets--;
-      const rk = a.racks[Math.floor(Math.random() * a.racks.length)];
-      this.rocketSide *= -1;
-      _a.set(rk[0] * this.rocketSide, rk[1], rk[2]).applyQuaternion(fm.quat).add(fm.pos);
-      _b.set((Math.random() - 0.5) * 0.008, (Math.random() - 0.5) * 0.008, -1).normalize().applyQuaternion(fm.quat);
-      const mesh = new THREE.Mesh(this.rocketGeo, this.rocketMat);
-      mesh.position.copy(_a); this.scene.add(mesh);
-      this.rockets.push({ mesh, pos: mesh.position, vel: fm.vel.clone().addScaledVector(_b, 90), dir: _b.clone(), age: 0, burn: 1.7, target: tg && tg.locked ? tg.target : null });
-      this.audio.rocket();
-    }
+    // Z: arma seleccionada
+    const secEdge = input.rocket && !this.prevSec; this.prevSec = !!input.rocket;
+    if (pr.sel === 'rkt') {
+      if (secEdge && p.rockets <= 0) this.notify?.('Sin cohetes', 'bad');
+      if (pr.salvo > 0) {
+        // salva: N cohetes por pulsación
+        if (secEdge) this.salvo = pr.salvo;
+        if (this.salvo > 0 && p.rockets > 0 && this.rocketT <= 0) { this.launchRocket(tg); this.rocketT = 0.09; this.salvo--; }
+      } else if (input.rocket && p.rockets > 0 && this.rocketT <= 0) { this.launchRocket(tg); this.rocketT = 0.16; }
+    } else if (secEdge) this.launchMissile(pr.sel, tg);
+  }
+
+  launchRocket(tg) {
+    const p = this.player, a = p.spec.arms, fm = p.fm;
+    p.rockets--;
+    const rk = a.racks[Math.floor(Math.random() * a.racks.length)];
+    this.rocketSide *= -1;
+    _a.set(rk[0] * this.rocketSide, rk[1], rk[2]).applyQuaternion(fm.quat).add(fm.pos);
+    _b.set((Math.random() - 0.5) * 0.008, (Math.random() - 0.5) * 0.008, -1).normalize().applyQuaternion(fm.quat);
+    const mesh = new THREE.Mesh(this.rocketGeo, this.rocketMat);
+    mesh.position.copy(_a); this.scene.add(mesh);
+    this.rockets.push({ mesh, pos: mesh.position, vel: fm.vel.clone().addScaledVector(_b, 90), dir: _b.clone(), age: 0, burn: 1.7, target: tg && tg.locked ? tg.target : null });
+    this.audio.rocket();
+  }
+
+  // misil: exige un blanco fijado del tipo adecuado; guiado hasta el impacto
+  launchMissile(kind, tg) {
+    const p = this.player, a = p.spec.arms[kind], fm = p.fm;
+    if (!a) return;
+    if (p[kind] <= 0) { this.notify?.(`Sin ${a.short}`, 'bad'); return; }
+    const t = tg && tg.locked ? tg.target : null;
+    const air = kind === 'aa';
+    if (!t) { this.notify?.(`${a.short}: fija antes un blanco ${air ? 'aéreo' : 'terrestre'}`, 'bad'); this.audio.tone?.(220, 0.2, 0.08); return; }
+    if (!!t.air !== air) { this.notify?.(`${a.short}: solo contra blancos ${air ? 'aéreos' : 'terrestres'}`, 'bad'); this.audio.tone?.(220, 0.2, 0.08); return; }
+    p[kind]--;
+    const rk = p.spec.arms.racks[0];
+    this.rocketSide *= -1;
+    _a.set(rk[0] * 1.25 * this.rocketSide, rk[1] - 0.2, rk[2]).applyQuaternion(fm.quat).add(fm.pos);
+    _b.set(0, 0, -1).applyQuaternion(fm.quat);
+    const mesh = new THREE.Mesh(this.missileGeo, this.rocketMat);
+    mesh.position.copy(_a); this.scene.add(mesh);
+    this.rockets.push({
+      mesh, pos: mesh.position, vel: fm.vel.clone().addScaledVector(_b, 25), dir: _b.clone(), age: 0, target: t, missile: true,
+      burn: 3.2, thrust: air ? 330 : 240, turn: air ? 6 : 3.5, life: 14, dmg: 450,
+    });
+    this.audio.rocket();
+    this.notify?.(`${a.short} lanzado`, 'good');
   }
 
   addBullet(pos, vel, dmg, friendly) {
@@ -409,15 +486,15 @@ export class Combat {
       const burning = r.age < r.burn;
       const tgt = r.target && !r.target.dead ? r.target : null;
       // con el motor encendido las aletas mantienen la trayectoria; apagado, cae en balística
-      if (burning) r.vel.addScaledVector(r.dir, 520 * dt); else if (!tgt) r.vel.y -= G * dt;
+      if (burning) r.vel.addScaledVector(r.dir, (r.thrust || 520) * dt); else if (!tgt) r.vel.y -= G * dt;
       if (tgt) {
-        // guiado: gira hacia el punto de encuentro con un límite de 3 rad/s
+        // guiado: gira hacia el punto de encuentro (3 rad/s los cohetes; más los misiles aire-aire)
         const v = r.vel.length();
         this.leadPoint(r.pos, tgt, ZERO, Math.max(v, 200), _c, false);
         _d.copy(_c).sub(r.pos).normalize();
         _c.copy(r.vel).divideScalar(v || 1);
         const ang = Math.acos(clamp(_c.dot(_d), -1, 1));
-        if (ang > 1e-4) _c.lerp(_d, Math.min(1, 3 * dt / ang)).normalize();
+        if (ang > 1e-4) _c.lerp(_d, Math.min(1, (r.turn || 3) * dt / ang)).normalize();
         r.vel.copy(_c).multiplyScalar(v);
       }
       const sp = r.vel.length();
@@ -432,14 +509,14 @@ export class Combat {
           const f = k / n, x = lerp(_a.x, r.pos.x, f), y = lerp(_a.y, r.pos.y, f), z = lerp(_a.z, r.pos.z, f);
           this.fx.glow(x, y, z, 0, 0, 0, 9, 4.5, 1.4, 1.9, 0.14, 0);
         }
-        this.fx.puff(r.pos.x, r.pos.y, r.pos.z, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 0.55, 2.2, 0.82);
+        this.fx.puff(r.pos.x, r.pos.y, r.pos.z, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, r.missile ? 0.9 : 0.55, r.missile ? 3.5 : 2.2, 0.82);
       }
-      let boom = r.age > 9;
+      let boom = r.age > (r.life || 9), hit = null;
       if (!boom) {
         const h = Math.max(world.height(r.pos.x, r.pos.z), 0);
         if (r.pos.y <= h + 0.5) boom = true;
         // espoleta de proximidad: estalla al pasar a menos de 18 m del blanco guiado
-        let hit = tgt && segHit(_a, r.pos, tgt.pos, 18, tgt.air ? 0 : 1.5) ? tgt : null;
+        hit = tgt && segHit(_a, r.pos, tgt.pos, 18, tgt.air ? 0 : 1.5) ? tgt : null;
         if (!hit) for (const e of this.enemies) {
           if (e.dead) continue;
           if (segHit(_a, r.pos, e.pos, e.r * (e.air ? 1.2 : 1), e.air ? 0 : 1.5)) { hit = e; break; }
@@ -449,8 +526,9 @@ export class Combat {
         if (hit) { boom = true; closestOnSeg(_a, r.pos, hit.pos, r.pos); }
       }
       if (boom) {
-        this.fx.explosion(r.pos, 0.85);
+        this.fx.explosion(r.pos, r.missile ? 1.4 : 0.85);
         this.audio.hit();
+        if (r.missile && hit) this.damage(hit, r.dmg); // carga del misil: destruye cualquier blanco
         for (const e of this.enemies) {
           if (e.dead) continue;
           const d = e.pos.distanceTo(r.pos);

@@ -1,24 +1,26 @@
 // Entre Nubes — bucle principal, cámaras, entrada, HUD y menús.
 import * as THREE from 'three';
-import { AIRCRAFT, AIRCRAFT_BY_ID, CATEGORIES } from './aircraft.js?v=27';
-import { buildModel } from './models.js?v=27';
-import { Cockpit } from './cockpit.js?v=27';
-import { FlightModel } from './physics.js?v=27';
-import { World, CHUNK } from './world.js?v=27';
-import { Environment, WEATHER } from './environment.js?v=27';
-import { AudioEngine } from './audio.js?v=27';
-import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=27';
-import { PostFX, CRT_CURVE } from './postfx.js?v=27';
-import { Particles } from './effects.js?v=27';
-import { Combat } from './combat.js?v=27';
-import { MODES, createMission, isCombat, Training } from './missions.js?v=27';
-import { Targeting } from './targeting.js?v=27';
-import { TacticalHUD } from './hud.js?v=27';
-import { NavMap } from './navmap.js?v=27';
-import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=27';
+import { AIRCRAFT, AIRCRAFT_BY_ID } from './aircraft.js?v=33';
+import { buildModel } from './models.js?v=33';
+import { Cockpit } from './cockpit.js?v=33';
+import { FlightModel } from './physics.js?v=33';
+import { World, CHUNK } from './world.js?v=33';
+import { Environment, WEATHER } from './environment.js?v=33';
+import { AudioEngine } from './audio.js?v=33';
+import { mulberry32, clamp, lerp, smoothstep, DEG, RAD } from './util.js?v=33';
+import { PostFX, CRT_CURVE } from './postfx.js?v=33';
+import { Particles } from './effects.js?v=33';
+import { Combat } from './combat.js?v=33';
+import { MODES, createMission, isCombat, Training } from './missions.js?v=33';
+import { Targeting } from './targeting.js?v=33';
+import { TacMap } from './tacmap.js?v=33';
+import { Armory } from './armory.js?v=33';
+import { TacticalHUD } from './hud.js?v=33';
+import { NavMap } from './navmap.js?v=33';
+import { createEnvMap, setEnvIntensity, setEdgesVisible, forgetEdges } from './livery.js?v=33';
 
 // ---------------- Ajustes persistentes ----------------
-const DEFAULTS = { aircraft: 'f16', time: '13', weather: 'clear', dist: 'medium', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, assist: true, edges: true, crt: true, best: {} };
+const DEFAULTS = { aircraft: 'f16', time: '13', weather: 'clear', dist: 'medium', quality: 'medium', shadows: true, volume: 0.7, units: 'aviation', invert: false, fuel: true, mouse: 1, fov: 72, mode: 'free', mouseFly: false, timeflow: true, assist: true, edges: true, crt: true, weapons: null, best: {} };
 let settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('entrenubes2') || '{}')); } catch (_) { }
 // ajustes guardados de versiones anteriores (aeronaves o modos retirados)
@@ -56,6 +58,15 @@ env.sun.shadow.camera.layers.enableAll();
 const particles = new Particles(scene);
 const combat = new Combat(scene, particles, audio);
 const targeting = new Targeting(combat);
+// preferencias de tiro guardadas (arma de Z, ráfagas, puntería, salva)
+if (settings.weapons) Object.assign(combat.prefs, settings.weapons);
+combat.notify = (text, cls) => toast(text, cls);
+const saveWeapons = () => { settings.weapons = { ...combat.prefs }; save(); };
+const armory = new Armory({ combat, targeting, getSpec: () => state.spec, onChange: () => { audio.click(); saveWeapons(); } });
+const tacMap = new TacMap({
+  combat, targeting, getFm: () => state.fm, getNav: () => state.fm ? navTarget() : null,
+  onSelect: () => audio.click(),
+});
 const tacHud = new TacticalHUD(document.getElementById('hud-canvas'));
 tacHud.curve = settings.crt ? CRT_CURVE : null;
 
@@ -136,7 +147,6 @@ document.querySelectorAll('.window .win-head').forEach(h => {
 });
 
 // ---------------- Menú ----------------
-let currentCat = AIRCRAFT_BY_ID[settings.aircraft]?.cat || 'plane';
 const unarmedFor = (a, mode) => isCombat(mode) && !a.arms;
 const MODE_SUB = { free: 'Explora y entrena', cas: 'Tanques y antiaéreos', dogfight: 'Oleadas de cazas' };
 function buildModes() {
@@ -151,7 +161,6 @@ function buildModes() {
       // los modos de combate exigen una aeronave armada
       if (unarmedFor(AIRCRAFT_BY_ID[settings.aircraft], m.id)) {
         settings.aircraft = m.id === 'cas' ? 'a10' : 'f14';
-        currentCat = AIRCRAFT_BY_ID[settings.aircraft].cat;
         showPreview();
       }
       save(); buildMenu();
@@ -163,14 +172,9 @@ function buildModes() {
 }
 function buildMenu() {
   buildModes();
-  const tabs = $('cat-tabs'); tabs.innerHTML = '';
-  for (const c of CATEGORIES) {
-    const b = document.createElement('button'); b.textContent = c.name; b.className = c.id === currentCat ? 'active' : '';
-    b.onclick = () => { currentCat = c.id; buildMenu(); };
-    tabs.appendChild(b);
-  }
+  // aviones y helicópteros en un único listado
   const list = $('aircraft-list'); list.innerHTML = '';
-  for (const a of AIRCRAFT.filter(a => a.cat === currentCat)) {
+  for (const a of AIRCRAFT) {
     const locked = unarmedFor(a, settings.mode);
     const d = document.createElement('div'); d.className = 'card' + (a.id === settings.aircraft ? ' active' : '') + (locked ? ' locked' : '');
     d.innerHTML = `<div class="n">${a.name}</div><div class="s">${locked ? 'Sin armamento' : a.role}</div><div class="tag">${Math.round(a.vmax * 3.6)} km/h</div>`;
@@ -201,7 +205,8 @@ function fillSpecCard(a) {
     .map(([l, v]) => `<span>${l}</span><div class="pips">${pips(v)}</div>`).join('');
   const arms = a.arms;
   $('spec-data').innerHTML = `<span>Vmáx <b>${Math.round(a.vmax * 3.6)} km/h</b></span><span>Masa <b>${(a.mass / 1000).toFixed(1)} t</b></span>` +
-    (arms ? `<span>Cañón <b>${arms.gun.ammo}</b></span><span>Cohetes <b>${arms.rockets}</b></span>` : '');
+    (arms ? `<span>Cañón <b>${arms.gun.ammo}</b></span><span>Cohetes <b>${arms.rockets}</b></span>` +
+      (arms.ag ? `<span>${arms.ag.short} <b>${arms.ag.n}</b></span>` : '') + (arms.aa ? `<span>${arms.aa.short} <b>${arms.aa.n}</b></span>` : '') : '');
 }
 $('opt-assist').addEventListener('change', () => { settings.assist = $('opt-assist').checked; $('set-assist').checked = settings.assist; save(); });
 function showPreview() {
@@ -276,6 +281,7 @@ async function startFlight(keepWorld = false) {
     const world = new World(state.seed, scene, settings.quality);
     state.world = world;
     state.navMap = new NavMap(world);
+    tacMap.setWorld(world, state.navMap);
     state.origin = world.addAirport(0, 0, rnd, false);
     makeDestination(state.origin.x, state.origin.z, rnd() * Math.PI * 2, rnd);
   }
@@ -506,7 +512,7 @@ function restart() {
 
 function toMenu() {
   state.mission?.dispose(); state.mission = null; state.training = null;
-  combat.reset(); combat.player = null; targeting.reset();
+  combat.reset(); combat.player = null; targeting.reset(); tacMap.close(); armory.close();
   tacHud.clear();
   state.mode = 'menu';
   $('hud').classList.add('hidden');
@@ -529,6 +535,8 @@ $('btn-settings2').addEventListener('click', () => togglePause(false));
 $('btn-newdest').onclick = () => { togglePause(false); newDestinationHere(); };
 $('btn-menu').onclick = () => togglePause();
 $('btn-cam').onclick = () => dispatchKey('KeyC');
+$('btn-map').onclick = () => tacMap.toggle();
+$('btn-arms').onclick = () => armory.toggle();
 $('btn-sound').onclick = () => { audio.setMuted(!audio.muted); $('btn-sound').textContent = audio.muted ? '🔇' : '🔊'; };
 
 // ---------------- Entrada ----------------
@@ -543,7 +551,14 @@ addEventListener('keydown', (e) => {
   keys.add(k);
   const fm = state.fm, spec = state.spec;
   switch (k) {
-    case 'Escape': togglePause(); break;
+    case 'Escape': if (armory.isOpen) armory.close(); else if (tacMap.isOpen) tacMap.close(); else togglePause(); break;
+    case 'KeyJ': tacMap.toggle(); break;
+    case 'KeyI': armory.toggle(); break;
+    case 'KeyY': {
+      const w = combat.cycleWeapon();
+      if (w) { audio.click(); saveWeapons(); toast(`Arma seleccionada: ${w.name} (${w.n})`); armory.render(true); }
+      break;
+    }
     case 'KeyG':
       if (!spec.gearFixed && !(spec.type === 'heli' && !spec.gearRetract)) {
         if (fm.onGround && fm.gearDown) { toast('No puedes subir el tren en tierra', 'bad'); break; }
@@ -626,7 +641,7 @@ function readInput(dt) {
     return cur + clamp(t - cur, -rate * dt, rate * dt);
   };
   inp.pitch = ease(inp.pitch, tp); inp.roll = ease(inp.roll, tr); inp.yaw = ease(inp.yaw, ty);
-  if (settings.mouseFly && !tp && !tr) {
+  if (settings.mouseFly && !tp && !tr && !tacMap.isOpen) {
     // el cursor hace de palanca: zona muerta central y respuesta progresiva
     const curve = (v) => { const a = Math.max(0, Math.abs(v) - 0.05) / 0.95; return Math.sign(v) * a * a; };
     inp.pitch = curve(mouse.y) * 1.4 * (settings.invert ? -1 : 1); inp.roll = curve(mouse.x) * 1.4;
@@ -724,13 +739,16 @@ function computeInstState() {
   inst.tgt = tc ? {
     id: targeting.idText(), identified: targeting.identified, air: tc.e.air, training: !!tc.e.training,
     range: tc.range, az: tc.az, el: tc.el, off: tc.off, alt: tc.e.pos.y * ft,
-    lockT: targeting.lockT, locked: targeting.locked, gunAuto: targeting.gunAuto,
+    lockT: targeting.lockT, locked: targeting.locked, gunAuto: targeting.gunAuto, far: !!tc.far,
     idx: targeting.list.indexOf(tc) + 1, n: targeting.list.length,
   } : null;
   inst.contacts = targeting.list;
   inst.tgtTarget = targeting.target;
   inst.tgtRange = targeting.P.air;
   inst.ammo = pl?.ammo ?? 0; inst.rockets = pl?.rockets ?? 0; inst.hp = pl ? pl.hp / pl.maxHp : 1;
+  const ws = pl ? combat.selected : null;
+  inst.wsel = ws ? `${ws.short} ${ws.n}${ws.id === 'rkt' && combat.prefs.salvo ? ' ×' + combat.prefs.salvo : ''}` : '';
+  inst.gunMode = combat.prefs.burst ? 'BRST' : '';
   inst.heli = spec.type === 'heli';
   inst.agl = Math.max(0, fm.pos.y - spec.gearH - Math.max(0, state.world.groundHeight(fm.pos.x, fm.pos.z))) * ft;
   const sy = Math.sin(e.y), cy = Math.cos(e.y);
@@ -765,7 +783,11 @@ function updateHUD(dt) {
   if (mode) {
     let html = mode.panel();
     const pl = combat.player;
-    if (pl) html += ` · Blindaje ${Math.round(pl.hp / pl.maxHp * 100)} % · Cañón ${pl.ammo} · Cohetes ${pl.rockets} · ${combat.score} pts`;
+    if (pl) {
+      // el arma seleccionada para Z va resaltada
+      const ws = combat.weapons().map(w => w.id === combat.prefs.sel ? `<b>${w.short} ${w.n}</b>` : `${w.short} ${w.n}`).join(' · ');
+      html += ` · Blindaje ${Math.round(pl.hp / pl.maxHp * 100)} % · Cañón ${pl.ammo} · ${ws} · ${combat.score} pts`;
+    }
     $('hud-mission').innerHTML = html;
   }
   const nm = state.navMap;
@@ -955,6 +977,8 @@ function loop() {
   state.world.update(camWorld, state.paused ? 0 : dt, 6);
   state.world.updateLights(env.night, camWorld);
   state.navMap.update(fm.pos.x, fm.pos.z, 1.5);
+  tacMap.update(dt);
+  armory.update(dt);
   for (const ap of state.world.airports) if (ap.windsock) ap.windsock.rotation.y = Math.atan2(-env.wind.z, env.wind.x) + ap.hdg;
   env.update(state.paused ? 0 : dt, { position: camWorld }, fm.pos);
   computeInstState();
