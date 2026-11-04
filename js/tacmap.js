@@ -2,11 +2,13 @@
 // centrado en el cursor) y desplazamiento (arrastrar), aeropuertos, ruta, el
 // avión con su rumbo y todos los blancos con su posición. Un clic en un blanco,
 // en el mapa o en la lista lateral, lo designa en el sistema de fijación.
-// El relieve combina tres cachés: una amplia de 96 km alrededor del avión, la
-// del mapa móvil de cabina (32 km) y una de detalle que sigue a la vista y se
-// recalcula al hacer zoom.
-import { ReliefCache } from './navmap.js?v=39';
-import { KINDS } from './combat.js?v=39';
+// El relieve combina dos cachés con curvas de nivel: una amplia de 96 km
+// alrededor del avión y una de detalle que sigue a la vista y se recalcula al
+// hacer zoom (mientras la amplia se calcula, se usa la del mapa de cabina).
+// La elevación se ve en los tintes (con su leyenda), las curvas de nivel y la
+// cota del punto bajo el cursor.
+import { ReliefCache, tint } from './navmap.js?v=41';
+import { KINDS } from './combat.js?v=41';
 
 const TAU = Math.PI * 2;
 const MIN_MPP = 2.5, MAX_MPP = 240;           // metros por píxel de pantalla
@@ -32,8 +34,8 @@ export class TacMap {
 
   setWorld(world, navMap) {
     this.world = world; this.navMap = navMap;
-    this.wide = new ReliefCache(world, 96000, 256);
-    this.detail = new ReliefCache(world, 8000, 384);
+    this.wide = new ReliefCache(world, 96000, 256, true);
+    this.detail = new ReliefCache(world, 8000, 384, true);
   }
 
   open() {
@@ -93,6 +95,7 @@ export class TacMap {
     cv.addEventListener('pointermove', (e) => {
       const [px, py] = this.evPos(e);
       this.hover = this.pick(px, py);
+      this.cursor = this.toW(px, py);
       if (!drag) return;
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (Math.hypot(dx, dy) > 4) drag.moved = true;
@@ -102,7 +105,7 @@ export class TacMap {
       if (drag && !drag.moved) { const [px, py] = this.evPos(e); this.select(this.pick(px, py)); }
       drag = null;
     });
-    cv.addEventListener('pointerleave', () => { this.hover = null; });
+    cv.addEventListener('pointerleave', () => { this.hover = null; this.cursor = null; });
     document.getElementById('tacmap-center').addEventListener('click', () => { this.follow = true; });
     document.getElementById('tacmap-close').addEventListener('click', () => this.close());
     // al pulsar (no al soltar): la lista se regenera y un clic entre dos regeneraciones se perdería
@@ -154,7 +157,8 @@ export class TacMap {
     g.fillStyle = '#05080c'; g.fillRect(0, 0, W, H);
     g.imageSmoothingEnabled = true;
     this.drawCache(this.wide);
-    this.drawCache(this.navMap?.relief);
+    // el relieve del mapa de cabina (sin curvas de nivel) solo cubre mientras la caché amplia se calcula
+    if (!this.wide.ready) this.drawCache(this.navMap?.relief);
     if (this.detail.ready && this.detail.fspan < 31000) this.drawCache(this.detail);
     g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(0, 0, W, H);
     g.lineCap = 'round'; g.lineJoin = 'round';
@@ -247,6 +251,8 @@ export class TacMap {
       g.textAlign = 'left'; g.textBaseline = 'top';
       lines.forEach((l, i) => { g.fillStyle = i ? '#dfe8f0' : g.strokeStyle; g.fillText(l, bx + 8 * dpr, by + 6 * dpr + i * fs * 1.35); });
     }
+    // elevación: leyenda de tintes por altura y cota del punto bajo el cursor
+    this.drawElevation(fm, fs);
     // norte y barra de escala
     this.label('N ▲', 14 * dpr, 20 * dpr, fs * 1.2, '#7fd8ff');
     const bar = steps.find(s => s * k > 80 * dpr) || 50000;
@@ -254,6 +260,31 @@ export class TacMap {
     g.strokeStyle = '#fff'; g.lineWidth = 2 * dpr;
     g.beginPath(); g.moveTo(bx, by - 5 * dpr); g.lineTo(bx, by); g.lineTo(bx + bar * k, by); g.lineTo(bx + bar * k, by - 5 * dpr); g.stroke();
     this.label(fmtD(bar), bx + bar * k + 8 * dpr, by - 3 * dpr, fs, '#fff');
+  }
+
+  drawElevation(fm, fs) {
+    const g = this.g, dpr = this.dpr, H = this.cv.height, W = this.cv.width;
+    const x = 14 * dpr, top = H - 200 * dpr, bh = 140 * dpr, bw = 14 * dpr, maxH = 1400;
+    for (let i = 0; i < bh; i++) {
+      const c = tint((1 - i / bh) * maxH);
+      g.fillStyle = `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`; g.fillRect(x, top + i, bw, 1);
+    }
+    g.strokeStyle = 'rgba(255,255,255,0.6)'; g.lineWidth = dpr; g.strokeRect(x, top, bw, bh);
+    for (const m of [0, 250, 500, 750, 1000, 1250]) this.label(`${m} m`, x + bw + 6 * dpr, top + (1 - m / maxH) * bh, fs * 0.85, '#dfe8f0');
+    this.label('ELEVACIÓN', x, top - 12 * dpr, fs * 0.85, '#7fd8ff');
+    // tu altura sobre la escala
+    const ay = top + (1 - Math.min(fm.pos.y, maxH) / maxH) * bh;
+    g.fillStyle = '#ffd23a'; g.beginPath(); g.moveTo(x - 2 * dpr, ay); g.lineTo(x - 9 * dpr, ay - 5 * dpr); g.lineTo(x - 9 * dpr, ay + 5 * dpr); g.closePath(); g.fill();
+    // cota bajo el cursor
+    if (this.cursor) {
+      const [wx, wz] = this.cursor, h = this.world.height(wx, wz);
+      const d = Math.hypot(wx - fm.pos.x, wz - fm.pos.z);
+      const t = h < 0 ? `agua · ${fmtD(d)} · ${brg(wx - fm.pos.x, wz - fm.pos.z)}°` : `elevación ${Math.round(h)} m · ${fmtD(d)} · ${brg(wx - fm.pos.x, wz - fm.pos.z)}°`;
+      g.font = `600 ${fs}px "Share Tech Mono", monospace`;
+      const tw = g.measureText(t).width + 16 * dpr;
+      g.fillStyle = 'rgba(6,12,20,0.85)'; g.fillRect(W - tw - 10 * dpr, H - 34 * dpr, tw, 24 * dpr);
+      this.label(t, W - tw - 2 * dpr, H - 22 * dpr, fs, '#e8f0ff');
+    }
   }
 
   label(t, x, y, size, col) {

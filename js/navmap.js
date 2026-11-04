@@ -17,7 +17,7 @@ const TINTS = [
   [0, [92, 132, 70]], [180, [118, 146, 78]], [420, [156, 150, 96]], [750, [146, 122, 92]],
   [1050, [128, 118, 112]], [1250, [228, 232, 238]],
 ];
-function tint(h) {
+export function tint(h) {
   for (let i = 1; i < TINTS.length; i++) {
     if (h < TINTS[i][0]) return mix(TINTS[i - 1][1], TINTS[i][1], (h - TINTS[i - 1][0]) / (TINTS[i][0] - TINTS[i - 1][0]));
   }
@@ -27,9 +27,11 @@ function tint(h) {
 // Caché de relieve sombreado, norte arriba, de `span` metros en `res` píxeles.
 // Se calcula por filas con presupuesto de tiempo en un búfer trasero y se
 // publica entera al terminar; cada trabajo puede usar un alcance distinto.
+// `contours` (opcional) dibuja curvas de nivel: el intervalo en metros se elige
+// según el tamaño del píxel y una de cada cinco (curva maestra) va más marcada.
 export class ReliefCache {
-  constructor(world, span, res) {
-    this.world = world; this.span = span; this.res = res;
+  constructor(world, span, res, contours = false) {
+    this.world = world; this.span = span; this.res = res; this.contours = contours;
     this.front = this.makeCanvas();
     this.back = this.makeCanvas();
     this.cx = null; this.cz = null;   // centro de la caché publicada
@@ -62,6 +64,7 @@ export class ReliefCache {
     const w = this.world, RES = this.res, step = job.span / RES, x0 = job.x - job.span / 2, z = job.z - job.span / 2 + (j + 0.5) * step;
     // el sombreado depende de la pendiente: se normaliza al tamaño del píxel
     const shade = 0.0045 * 143 / step;
+    const iv = !this.contours ? 0 : step > 200 ? 200 : step > 60 ? 100 : step > 25 ? 50 : 20;
     const d = this.back.img.data, prev = job.prev, cur = job.cur;
     for (let i = 0; i < RES; i++) {
       const x = x0 + (i + 0.5) * step;
@@ -82,7 +85,15 @@ export class ReliefCache {
           c = mix(c, [40, 86, 44], 0.75);
         }
         // sombreado del relieve con luz del noroeste
-        const s = Math.max(0.55, Math.min(1.5, 1 + ((h - hl) + (h - hu)) * shade));
+        let s = Math.max(0.55, Math.min(1.5, 1 + ((h - hl) + (h - hu)) * shade));
+        // curva de nivel: el píxel cruza una cota respecto a su vecino izquierdo o superior
+        if (iv) {
+          const k = Math.floor(h / iv), kl = Math.floor(Math.max(hl, 0) / iv), ku = Math.floor(Math.max(hu, 0) / iv);
+          if (k !== kl || k !== ku) {
+            const lvl = Math.max(k, kl, ku);
+            s *= lvl % 5 === 0 ? 0.45 : 0.68;
+          }
+        }
         c = [c[0] * s, c[1] * s, c[2] * s];
       }
       const k = (j * RES + i) * 4;

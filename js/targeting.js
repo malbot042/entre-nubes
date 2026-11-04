@@ -6,8 +6,8 @@
 // morro exactamente sobre el blanco. Un blanco elegido en el mapa táctico se
 // mantiene aunque esté fuera de alcance: el HUD guía hasta él y se fija al llegar.
 import * as THREE from 'three';
-import { KINDS } from './combat.js?v=39';
-import { clamp, DEG } from './util.js?v=39';
+import { KINDS } from './combat.js?v=41';
+import { clamp, DEG } from './util.js?v=41';
 
 const _d = new THREE.Vector3(), _q = new THREE.Quaternion();
 
